@@ -3,24 +3,40 @@ build-backend = "hatchling.build"
 requires = ["hatchling", "hatch-vcs"]
 
 [project]
-authors = [{name = "Joke Durnez"}]
+name = "neurodesign-plus"
+description = "Extended and maintained fork of the neurodesign package for fMRI experimental design optimisation"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dynamic = ["version"]
+
+authors = [
+    {name = "Joke Durnez"}
+]
+
+maintainers = [
+    {name = "Atharv Umap"},
+    {name = "Valentin Guigon"}
+]
+
 classifiers = [
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
-    "License :: OSI Approved",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
-    "Topic :: Software Development",
-    "Topic :: Scientific/Engineering",
-    "Operating System :: Microsoft :: Windows",
-    "Operating System :: POSIX",
-    "Operating System :: Unix",
-    "Operating System :: MacOS",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13"
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX",
+    "Operating System :: Unix",
+    "Operating System :: MacOS",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development"
 ]
+
 dependencies = [
     "scikit-learn>0.15.0",
     "rich",
@@ -28,28 +44,19 @@ dependencies = [
     "pdfrw",
     "matplotlib"
 ]
-description = "Package for design optimisation for fMRI experiments"
-# Version from setuptools_scm
-dynamic = ["version"]
-license = {text = "MIT"}
-maintainers = [{name = "Joke Durnez", email = "joke.durnez@gmail.com"}]
-name = "neurodesign"
-readme = "README.md"
-requires-python = ">=3.9"
 
 [project.optional-dependencies]
-# A combination of dependencies useful for developers
 dev = [
-    "neurodesign[doc,test]",
-    'pre-commit',
-    'tox'
+    "neurodesign-plus[doc,test]",
+    "pre-commit",
+    "tox"
 ]
-# Requirements necessary for building the documentation
+
 doc = [
     "sphinx",
     "sphinx-copybutton"
 ]
-# For running unit and docstring tests
+
 test = [
     "coverage",
     "pytest>=6.0.0",
@@ -57,12 +64,8 @@ test = [
     "nbmake"
 ]
 
-[tool.black]
-line-length = 90
-
-[tool.codespell]
-ignore-words = ".github/codespell_ignore_words.txt"
-skip = "examples/comparison_neurodesign.html,examples/comparison_neurodesign.ipynb"
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
 version-file = "neurodesign/_version.py"
@@ -70,14 +73,18 @@ version-file = "neurodesign/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["neurodesign"]
 
-[tool.hatch.version]
-source = "vcs"
+[tool.black]
+line-length = 90
 
 [tool.isort]
-combine_as_imports = true
-line_length = 90
 profile = "black"
+line_length = 90
+combine_as_imports = true
 skip_gitignore = true
+
+[tool.codespell]
+ignore-words = ".github/codespell_ignore_words.txt"
+skip = "examples/comparison_neurodesign.html,examples/comparison_neurodesign.ipynb"
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers --doctest-modules --showlocals -s -vv --durations=0"
