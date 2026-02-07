@@ -1091,6 +1091,7 @@ class Optimisation:
             else: 
                 ITI = self.exp.generate_iti(order, self.exp.conditional_ITI)
 
+
             des = None
             #des = Design(order=order, ITI=np.array(ITI), experiment=self.exp)
             if self.exp.conditional_ITI is not None or self.exp.order_probabilities is not None:
@@ -1258,7 +1259,7 @@ class Optimisation:
             weights = self.weights
 
         #If the order is fixed, we don't want to perform crossover or mutation on the designs
-        if not self.exp.order_fixed: 
+        if not self.exp.order_fixed and not self.exp.order_probabilities: 
             self._clean_designs(weights)
             if optimisation == "GA":
                 self._mutation(weights, seed)
