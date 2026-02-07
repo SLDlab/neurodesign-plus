@@ -53,8 +53,8 @@ python -m venv venv
 
 With the virtual environment activated, install dependencies:
 ```bash
-pip install git+https://github.com/neuropower/neurodesign.git
 pip install -r requirements.txt
+pip install .
 ```
 
 To deactivate the environment when you're done:
@@ -63,23 +63,7 @@ deactivate
 ```
 ---
 
-### V. Applying the modified classes.py
-
-Within your virtual environment, you will need to replace the original toolbox's classes.py with the modified classes-1.py.
-
-Here is an **example filepath** of where the classes.py can be found based on your python installation.
-
-```bash
-./.venv/lib/python3.13/site-packages/neurodesign/classes.py
-```
-
-Remove this classes.py file and replace it with the classes-1.py renamed as classes.py.
-
-Once this modification has been done in your environment, the tool is ready for use.
-
----
-
-### VI. (Optional) Use the virtual environment in Jupyter Notebooks
+### V. (Optional) Use the virtual environment in Jupyter Notebooks
 
 If you're working in `.ipynb` notebooks, register the virtual environment as a Jupyter kernel:
 ```bash
