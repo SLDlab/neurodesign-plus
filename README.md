@@ -87,5 +87,5 @@ TBD.
 This is a fork of the original **Neurodesign** package.
 
 - **Original Author:** [Neuropower Team](https://github.com/neuropower)
-- **Primary refactoring, extensions, and tutorials:** Atharv Umap
+- **Primary refactoring, extensions, and tutorials:** Atharv Umap (Social Learning and Decisions Lab, UMD)
 - **Supervision, design guidance, tutorials:** Valentin Guigon (Social Learning and Decisions Lab, UMD)
