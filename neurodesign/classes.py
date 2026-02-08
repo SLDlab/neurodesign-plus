@@ -172,6 +172,10 @@ class Design:
         # ITIs to onsets
         orderli = list(self.order)
         ITIli = list(self.ITI)
+
+        if self.experiment.stimuli_durations is not None and self.experiment.all_stim_durations is None:
+            self.experiment.calculate_all_stimuli(orderli)
+
         if self.experiment.restnum > 0:
             if self.experiment.all_stim_durations is None: 
                 # Old Package Code
@@ -554,7 +558,7 @@ class Experiment:
         self.all_stim_durations = None
         
         #Modification
-        #Working wiht multiple stimuli durations 
+        #Working with multiple stimuli durations 
         if stimuli_durations is not None: 
             assert len(stimuli_durations) == n_stimuli, "Must specify a duration for each stimulus"
             assert trial_max is not None, "Must provide a trial_max given stimuli_durations"
@@ -683,11 +687,14 @@ class Experiment:
             if self.order_fixed: 
                 self.calculate_all_stimuli()
                 TRIALdur = sum(self.all_stim_durations)
+                self.duration = self.calculate_duration(self.ITI, self.all_stim_durations)
             else: 
-                self.all_stim_durations = [(self.trial_max + self.t_pre + self.t_post)] * len(self.n_trials)
-                TRIALdur = self.n_trials * self.trial_max
+                ITIdur = self.n_trials * self.ITImean
+                TRIALdur = self.n_trials * self.trial_duration
+                duration = ITIdur + TRIALdur
+                self.duration = duration
+               
                 
-            self.duration = self.calculate_duration(self.ITI, self.all_stim_durations)
 
 
     #Computes the n_trials given the duration
@@ -810,10 +817,16 @@ class Experiment:
     
 
     #Calculating the new duration and all_stimuli lengths and trial_durations based on new order
-    def calculate_all_stimuli(self):
+    def calculate_all_stimuli(self, order = None):
         self.all_stim_durations = []
-        for i in range(len(self.order)):
-            stimuli = self.order[i]
+
+        if order is not None: 
+            order_used = order
+        else:
+            order_used = self.order
+
+        for i in range(len(order_used)):
+            stimuli = order_used[i]
             key = self.stimuli_durations[stimuli]
             
             if isinstance(key, dict): 
@@ -842,7 +855,7 @@ class Experiment:
             else: 
                 self.all_stim_durations.append(key)
         
-        assert len(self.all_stim_durations) == len(self.order)
+        assert len(self.all_stim_durations) == len(order_used)
 
         self.all_stim_durations = [d + self.t_pre + self.t_post for d in self.all_stim_durations]
         # print(sum(self.all_stim_durations))
@@ -1111,8 +1124,8 @@ class Optimisation:
                     ITImean= self.exp.ITImean,
                     restnum= self.exp.restnum,
                     restdur= self.exp.restdur,
-                    t_pre=0,
-                    t_post=0,
+                    t_pre=self.exp.t_pre,
+                    t_post=self.exp.t_post,
                     n_trials= self.exp.n_trials,
                     resolution= self.exp.resolution,
                     FeMax= self.exp.FeMax,
