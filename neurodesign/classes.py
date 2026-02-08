@@ -672,7 +672,10 @@ class Experiment:
             #Specific n_trials and duration conditions to avoid updates when both are provided (pre_calculated)
             #If both are provided no further calculations required
             if self.n_trials is not None and self.duration == None:
-                ITIdur = self.n_trials * self.ITImean
+                if self.conditional_ITI is None:
+                    ITIdur = self.n_trials * self.ITImean
+                else: 
+                    ITIdur = self.n_trials * self.ITImax
                 TRIALdur = self.n_trials * self.trial_duration
                 duration = ITIdur + TRIALdur
                 if self.restnum > 0:
@@ -689,7 +692,10 @@ class Experiment:
                 TRIALdur = sum(self.all_stim_durations)
                 self.duration = self.calculate_duration(self.ITI, self.all_stim_durations)
             else: 
-                ITIdur = self.n_trials * self.ITImean
+                if self.conditional_ITI is None:
+                    ITIdur = self.n_trials * self.ITImean
+                else: 
+                    ITIdur = self.n_trials * self.ITImax
                 TRIALdur = self.n_trials * self.trial_duration
                 duration = ITIdur + TRIALdur
                 self.duration = duration
@@ -859,7 +865,11 @@ class Experiment:
 
         self.all_stim_durations = [d + self.t_pre + self.t_post for d in self.all_stim_durations]
         # print(sum(self.all_stim_durations))
-        self.duration = self.calculate_duration(self.ITI, self.all_stim_durations)
+        if self.conditional_ITI is not None:
+            ITI_touse = [self.ITImax] * self.n_trials
+        else: 
+            ITI_touse = self.ITI
+        self.duration = self.calculate_duration(ITI_touse, self.all_stim_durations)
 
     #Added functions
     #Generates ITI with the first value being the default then the order. (ensures n_trials and ITI length is the same)
@@ -896,7 +906,7 @@ class Experiment:
                     if "max" in params:
                         val = min(val, params["max"])
 
-                    self.all_stim_durations.append(val)
+                    ITI.append(val)
         return ITI
 
     #Generates/calculates the duration based on stimuli_duration and ITI
