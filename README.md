@@ -9,10 +9,12 @@ The documentation of the base package `neurodesign` is available at [ReadTheDocs
 ## File description
 
 ```
-├── docs                    Contains the source code to generate the documentation with sphinx.
-├── examples                Contains scripts to perform a design optimalisation.
+├── docs                    Contains the source code to generate the documentation with sphinx (WIP).
+├── manuals                 Contains comprehensive markdown documentation on neurodesign-plus.
 └── neurodesign             Folder with the source code of the python package
     └── media               Folder contains the logo of neurodesign, which is used in the reports.
+├── tests                   Contains scripts to test modifications to the package.
+└── tutorials               Contains .ipynb tutorials on neurodesign-plus, the base functions and the new functions.
 ```
 
 ## Overview of Modifications
@@ -27,7 +29,7 @@ The modifications focus on the `classes.py` file, specifically enhancing the `Ex
 
 ## Installation & Setup
 
-See [link](./SETUP.md) for environment setup and installation instructions.
+See [link](./manuals/SETUP.md) for environment setup and installation instructions.
 
 ---
 
@@ -69,18 +71,21 @@ The Neurodesign Python package optimizes these experiments based on four metrics
 
 During optimization, you can assign weights to these metrics to reflect what matters most for your experiment.
 
+**See [link](./manuals/METRICS.md) for guidelines on interpreting metrics when optimising designs.**
+
 ---
 
 ## Modifications Documentation
 
-See [link](./TECHNICAL_CHANGES.md) for a detailed summary of changes relative to the upstream Neurodesign package.
+See [link](./manuals/TECHNICAL_CHANGES.md) for a detailed summary of changes relative to the upstream Neurodesign package.
 
-With these new parameters and changes in the package, it is simply a matter of defining the parameters required for the specific use case and the tool will perform the optimization. 
+With these new parameters and changes in the package, it is simply a matter of defining the parameters required for the specific use case and the tool will perform the optimization.
 
 **Note** that precedence for order follows as (if all provided):
-* Fixed ordering
-* Controlled ordering 
-* Random ordering
+
+- Fixed ordering
+- Controlled ordering
+- Random ordering
 
 The same holds for conditional_ITI and stimuli_durations.
 
@@ -89,6 +94,7 @@ The same holds for conditional_ITI and stimuli_durations.
 ## Tutorials
 
 Tutorial notebooks / scripts are under `tutorials/`.
+
 ```
 tutorials
 ├── base_functions                                 Contains tutorials of the different base package functions.
