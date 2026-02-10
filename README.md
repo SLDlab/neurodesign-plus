@@ -97,9 +97,10 @@ Tutorial notebooks / scripts are under `tutorials/`.
 
 ```
 tutorials
-├── base_functions                                 Contains tutorials of the different base package functions.
-├── new_functions                                  Contains tutorials on using the modifications.
-└── tutorial_neurodesign_base_overview             Base tutorial of the neurodesign package.
+├── base_functions                                    Contains tutorials of the different base package functions.
+├── new_functions                                     Contains tutorials on using the modifications.
+├── tutorial_1_neurodesign_base_overview              Base tutorial of the neurodesign package.
+└── tutorial_2_comparing_designs_across_experiments   Tutorial on comparing designs across diverse experiment definitions.
 ```
 
 For quick access, find the tutorials in the table below:
