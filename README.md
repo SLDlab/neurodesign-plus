@@ -105,15 +105,16 @@ tutorials
 For quick access, find the tutorials in the table below:
 | # | Tutorial | Link |
 | :---: | :--- | :---: |
-| 1 | **tutorial_neurodesign_base_overview** | [View](./tutorials/tutorial_neurodesign_base_overview.ipynb) |
-| 2 | **tutorial_base_compare_and_simulate** | [View](./tutorials/base_functions/tutorial_base_compare_and_simulate.ipynb) |
-| 3 | **tutorial_base_comparing_designs** | [View](./tutorials/base_functions/tutorial_base_comparing_designs.ipynb) |
-| 4 | **tutorial_base_discovering_best_design** | [View](./tutorials/base_functions/tutorial_base_discovering_best_design.ipynb) |
-| 5 | **tutorial_base_optimizating_and_report** | [View](./tutorials/base_functions/tutorial_base_optimizating_and_report.ipynb) |
-| 6 | **tutorial_new_controlled_probabalistic_ordering** | [View](./tutorials/new_functions/tutorial_new_controlled_probabalistic_ordering.ipynb) |
-| 7 | **tutorial_new_fixed_order** | [View](./tutorials/new_functions/tutorial_new_fixed_order.ipynb) |
-| 8 | **tutorial_new_varied_ITI** | [View](./tutorials/new_functions/tutorial_new_varied_ITI.ipynb) |
-| 9 | **tutorial_new_varied_stimuli_durations** | [View](./tutorials/new_functions/tutorial_new_varied_stimuli_durations.ipynb) |
+| 1 | **tutorial_1_neurodesign_base_overview** | [View](./tutorials/tutorial_1_neurodesign_base_overview.ipynb) |
+| 2 | **tutorial_2_comparing_designs_across_experiments** | [View](./tutorials/tutorial_2_comparing_designs_across_experiments.ipynb) |
+| 3 | **tutorial_base_compare_and_simulate** | [View](./tutorials/base_functions/tutorial_base_compare_and_simulate.ipynb) |
+| 4 | **tutorial_base_comparing_designs** | [View](./tutorials/base_functions/tutorial_base_comparing_designs.ipynb) |
+| 5 | **tutorial_base_discovering_best_design** | [View](./tutorials/base_functions/tutorial_base_discovering_best_design.ipynb) |
+| 6 | **tutorial_base_optimizating_and_report** | [View](./tutorials/base_functions/tutorial_base_optimizating_and_report.ipynb) |
+| 7 | **tutorial_new_controlled_probabalistic_ordering** | [View](./tutorials/new_functions/tutorial_new_controlled_probabalistic_ordering.ipynb) |
+| 8 | **tutorial_new_fixed_order** | [View](./tutorials/new_functions/tutorial_new_fixed_order.ipynb) |
+| 9 | **tutorial_new_varied_ITI** | [View](./tutorials/new_functions/tutorial_new_varied_ITI.ipynb) |
+| 10 | **tutorial_new_varied_stimuli_durations** | [View](./tutorials/new_functions/tutorial_new_varied_stimuli_durations.ipynb) |
 
 ## Credits
 
