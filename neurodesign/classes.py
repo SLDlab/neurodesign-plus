@@ -58,7 +58,7 @@ class Design:
     :type onsets: list of floats
     """
 
-    def __init__(self, order, ITI, experiment, onsets=None):
+    def __init__(self, order, ITI, experiment, onsets=None, all_stim_durations=None):
 
         self.order = order
         self.ITI = ITI
@@ -66,11 +66,12 @@ class Design:
         self.Fe = 0
         self.Fd = 0
 
+        # Per-design variable stimulus durations (None = use experiment.stim_duration)
+        self.all_stim_durations = all_stim_durations
+
         self.experiment = experiment
 
         # assert whether design is valid
-        if self.experiment.ITI is not None:
-            self.ITI = self.experiment.ITI
         if len(self.ITI) != experiment.n_trials:
             raise ValueError("length of design (ITI's) does not comply with experiment")
         if len(self.order) != experiment.n_trials:
@@ -124,19 +125,42 @@ class Design:
         offspringorder1 = None
         offspringorder2 = None
 
-        #Making sure the order doesn't change for the crossover
+        # Making sure the order doesn't change for the crossover
         if self.experiment.order_fixed:
             offspringorder1 = self.order
             offspringorder2 = other.order
-        else: 
-            offspringorder1 = list(self.order)[:changepoint] + list(other.order)[changepoint:]
-            offspringorder2 = list(other.order)[:changepoint] + list(self.order)[changepoint:]
+        elif self.experiment.order_probabilities is not None:
+            offspringorder1 = Experiment.sample_from_probabilities(
+                    self.experiment.order_probabilities, self.experiment.order_keys, self.experiment.order_length)
+            offspringorder2 = Experiment.sample_from_probabilities(
+                    self.experiment.order_probabilities, self.experiment.order_keys, self.experiment.order_length)
+        else:
+            offspringorder1 = list(self.order)[
+                :changepoint] + list(other.order)[changepoint:]
+            offspringorder2 = list(other.order)[
+                :changepoint] + list(self.order)[changepoint:]
+
+        # Re-sample stim durations for new orders if variable durations are used
+        asd1 = self.all_stim_durations  # default: inherit from parent
+        asd2 = other.all_stim_durations
+        if self.experiment.stimuli_durations is not None and not self.experiment.order_fixed:
+            # Order changed, so re-sample durations to match new order
+            asd1 = Experiment.sample_stim_durations(
+                offspringorder1, self.experiment.stimuli_durations,
+                self.experiment.t_pre, self.experiment.t_post,
+            )
+            asd2 = Experiment.sample_stim_durations(
+                offspringorder2, self.experiment.stimuli_durations,
+                self.experiment.t_pre, self.experiment.t_post,
+            )
 
         offspring1 = Design(
-            order=offspringorder1, ITI=self.ITI, experiment=self.experiment
+            order=offspringorder1, ITI=self.ITI, experiment=self.experiment,
+            all_stim_durations=asd1,
         )
         offspring2 = Design(
-            order=offspringorder2, ITI=other.ITI, experiment=self.experiment
+            order=offspringorder2, ITI=other.ITI, experiment=self.experiment,
+            all_stim_durations=asd2,
         )
 
         return [offspring1, offspring2]
@@ -156,28 +180,38 @@ class Design:
         )
         mutated = copy.copy(self.order)
 
-        if not self.experiment.order_fixed:
+        if not self.experiment.order_fixed and self.experiment.order_probabilities is None:
             for mut in mut_ind:
                 np.random.seed(seed)
                 mut_stim = np.random.choice(self.experiment.n_stimuli, 1, replace=True)[0]
                 mutated[mut] = mut_stim
 
-        offspring = Design(order=mutated, ITI=self.ITI, experiment=self.experiment)
+        # Re-sample stim durations if order changed and variable durations are used
+        asd = self.all_stim_durations
+        if self.experiment.stimuli_durations is not None and not self.experiment.order_fixed:
+            asd = Experiment.sample_stim_durations(
+                mutated, self.experiment.stimuli_durations,
+                self.experiment.t_pre, self.experiment.t_post,
+            )
+
+        offspring = Design(
+            order=mutated, ITI=self.ITI, experiment=self.experiment,
+            all_stim_durations=asd,
+        )
 
         return offspring
 
-
     def designmatrix(self):
-        """Expand from order of stimuli to a fMRI timeseries."""
+        """Expand from order of stimuli to a fMRI timeseries.
+
+        Returns self on success, or False if the design's actual timing
+        exceeds the experiment's container (e.g. from extreme ITI draws).
+        """
         # ITIs to onsets
         orderli = list(self.order)
         ITIli = list(self.ITI)
-
-        if self.experiment.stimuli_durations is not None and self.experiment.all_stim_durations is None:
-            self.experiment.calculate_all_stimuli(orderli)
-
         if self.experiment.restnum > 0:
-            if self.experiment.all_stim_durations is None: 
+            if self.all_stim_durations is None:
                 # Old Package Code
                 ITIli = [
                     y + self.experiment.trial_duration if not x == "R" else y
@@ -186,42 +220,48 @@ class Design:
                 onsets = np.cumsum(ITIli) - self.experiment.trial_duration
 
                 self.onsets = [y for x, y in zip(orderli, onsets) if not x == "R"]
-            else: 
+            else:
                 for x in np.arange(0, self.experiment.n_trials, self.experiment.restnum)[1:][
                     ::-1
                 ]:
                     orderli.insert(x, "R")
                     ITIli.insert(x, self.experiment.restdur)
-                
-                #Modified by Atharv Umap
-                #Calculate the ITI_li based on the rest numbers and varied trial duration
-                ITIli_new = [] 
-                onsets = [] 
+
+                # Calculate the ITI_li based on the rest numbers and varied trial duration
+                # Use a separate trial counter since orderli is now expanded with "R" entries
+                # but all_stim_durations only has n_trials entries.
+                ITIli_new = []
+                onsets = []
+                trial_idx = 0
                 for i, (x, y) in enumerate(zip(orderli, ITIli)):
                     if not x == "R":
-                        ITIli_new.append(y+self.experiment.all_stim_durations[i])
-                    else: 
+                        ITIli_new.append(y + self.all_stim_durations[trial_idx])
+                        trial_idx += 1
+                    else:
                         ITIli_new.append(y)
 
                 ITIli_cumsum = np.cumsum(ITIli_new)
-                # Subtracts the cumulative sum by the respsective trial durations while excluding the rest trials. 
+                # Subtracts the cumulative sum by the respective trial durations
+                # while excluding the rest trials.
+                trial_idx = 0
                 for i, (x, y) in enumerate(zip(orderli, ITIli_cumsum)):
                     if not x == "R":
-                        onsets.append(y - self.experiment.all_stim_durations[i])
+                        onsets.append(y - self.all_stim_durations[trial_idx])
+                        trial_idx += 1
 
                 self.onsets = onsets
         else:
-            if self.experiment.all_stim_durations is None: 
-                #Old Package Code 
+            if self.all_stim_durations is None:
+                # Old Package Code
                 ITIli = np.array(self.ITI) + self.experiment.trial_duration
                 self.onsets = np.cumsum(ITIli) - self.experiment.trial_duration
-            else: 
-                #Modified by Atharv Umap
-                ITIli_new = [y+x for x, y in zip(self.experiment.all_stim_durations, ITIli)]
+            else:
+                # Modified by Atharv Umap
+                ITIli_new = [y + x for x, y in zip(self.all_stim_durations, ITIli)]
                 ITIli_cumsum = np.cumsum(ITIli_new)
-                
-                onsets_temp = [] 
-                for x, y in zip(self.experiment.all_stim_durations, list(ITIli_cumsum)):
+
+                onsets_temp = []
+                for x, y in zip(self.all_stim_durations, list(ITIli_cumsum)):
                     onsets_temp.append(y - x)
                 self.onsets = onsets_temp
 
@@ -231,12 +271,13 @@ class Design:
         self.ITI, x = _round_to_resolution(self.ITI, self.experiment.resolution)
         onsetX, XindStim = _round_to_resolution(stimonsets, self.experiment.resolution)
 
-        if self.experiment.all_stim_durations is None: 
-            stim_duration_tp = int(self.experiment.stim_duration / self.experiment.resolution)
+        if self.all_stim_durations is None:
+            stim_duration_tp = int(self.experiment.stim_duration
+                                   / self.experiment.resolution)
 
-            # find indices in resolution scale of stimuli
-            assert np.max(XindStim) <= self.experiment.n_tp
-            assert np.max(XindStim) + stim_duration_tp <= self.experiment.n_tp
+            # Check if design fits in container — reject if not
+            if np.max(XindStim) + stim_duration_tp > self.experiment.n_tp:
+                return False
 
             # create design matrix in resolution scale (=deltasM in Kao toolbox)
             X_X = np.zeros([self.experiment.n_tp, self.experiment.n_stimuli])
@@ -245,36 +286,30 @@ class Design:
                     X_X[np.array(XindStim) + dur, int(stimulus)] = [
                         1 if z == stimulus else 0 for z in self.order
                     ]
-        else: 
-            stim_duration_tp = self.experiment.all_stim_durations / self.experiment.resolution
-            stim_duration_tp = [int(x) for x in stim_duration_tp] 
+        else:
+            stim_duration_tp = np.array(self.all_stim_durations) / \
+                self.experiment.resolution
+            stim_duration_tp = [int(x) for x in stim_duration_tp]
 
-            # find indices in resolution scale of stimuli
-            try:
-                assert np.max(XindStim) <= self.experiment.n_tp
-
-                #Modified to add multiple different stimuli_duration
-                assert np.max(XindStim) + stim_duration_tp[-1] <= self.experiment.n_tp
-            except Exception as e:
-                print(XindStim)
-                print(stim_duration_tp[-1])
-                print(self.experiment.n_tp)
-                assert np.max(XindStim) <= self.experiment.n_tp
-                assert np.max(XindStim) + stim_duration_tp[-1] <= self.experiment.n_tp
+            # Check if design fits in container — reject if not
+            max_endpoint = max(XindStim[i] + stim_duration_tp[i]
+                               for i in range(len(self.order)))
+            if max_endpoint > self.experiment.n_tp:
+                return False
 
             X_X = np.zeros([self.experiment.n_tp, self.experiment.n_stimuli])
-            #indexing and traversing through the order
+            # indexing and traversing through the order
             for i, stim in enumerate(self.order):
-                #the current onset
+                # the current onset
                 onset = XindStim[i]
-                #the duration between the onsets
+                # the duration between the onsets
                 dur = stim_duration_tp[i]
-                #labeling the binary values of the indices with 
+                # labeling the binary values of the indices with
                 for j in range(dur):
                     t_idx = onset + j
                     if t_idx < self.experiment.n_tp:
                         X_X[t_idx, stim] = 1
-    
+
         # deconvolved matrix in resolution units
         deconvM = np.zeros(
             [
@@ -306,7 +341,7 @@ class Design:
         X_Z = np.zeros([self.experiment.n_tp, self.experiment.n_stimuli])
         for stim in range(self.experiment.n_stimuli):
             X_Z[:, stim] = deconvM[
-                :, (stim * self.experiment.laghrf) : ((stim + 1) * self.experiment.laghrf)
+                :, (stim * self.experiment.laghrf): ((stim + 1) * self.experiment.laghrf)
             ].dot(self.experiment.basishrf)
 
         X_Z = X_Z[idxX, :]
@@ -321,8 +356,6 @@ class Design:
         self.C = self.experiment.C
 
         return self
-
-
 
     def FeCalc(self, Aoptimality=True):
         """
@@ -513,9 +546,8 @@ class Experiment:
         rho: float,
         stim_duration,
         n_stimuli: int,
-        stimuli_durations=None, 
-        ITI = None, #Adding a custom ITI
-        conditional_ITI=None, #Adding a new input for ITI's that can be controlled by the user.
+        stimuli_durations=None,
+        conditional_ITI=None,  # Specification for condition-dependent ITI distributions
         ITImodel=None,
         ITImin=None,
         ITImax=None,
@@ -534,12 +566,12 @@ class Experiment:
         maxrep=None,
         hardprob=False,
         confoundorder=3,
-        order = None, 
-        order_probabilities = None,
-        order_keys = None, 
-        order_length = None, 
-        order_fixed = False,
-        trial_max = None
+        order=None,
+        order_probabilities=None,
+        order_keys=None,
+        order_length=None,
+        order_fixed=False,
+        trial_max=None
     ):
         self.TR = TR
         self.P = P
@@ -553,77 +585,49 @@ class Experiment:
         self.resolution = resolution
         self.stim_duration = stim_duration
 
+        # We will calculate all stimuli durations based on the given values
+        # NOTE: all_stim_durations is now stored per-Design, not per-Experiment.
+        # The Experiment only stores the *specification* (stimuli_durations dict/list).
 
-        #We will calculate all stimuli durations based on the given values
-        self.all_stim_durations = None
-        
-        #Modification
-        #Working with multiple stimuli durations 
-        if stimuli_durations is not None: 
-            assert len(stimuli_durations) == n_stimuli, "Must specify a duration for each stimulus"
+        # Modification
+        # Working wiht multiple stimuli durations
+        if stimuli_durations is not None:
+            assert len(
+                stimuli_durations) == n_stimuli, "Must specify a duration for each stimulus"
             assert trial_max is not None, "Must provide a trial_max given stimuli_durations"
             self.trial_max = trial_max
-            self.stimuli_durations = stimuli_durations 
+            self.stimuli_durations = stimuli_durations
         else:
             self.trial_max = stim_duration
             self.stimuli_durations = None
-        
+
         self.order_probabilities = order_probabilities
         self.order_keys = order_keys
         self.order_length = order_length
         self.order_fixed = order_fixed
 
-        #Adding the custom order 
+        # Adding the custom order
         if order is not None:
-            self.order = order 
+            self.order = order
             self.order_fixed = True
-        elif order_probabilities is not None:  
-            order = self.sample_from_probabilities(order_probabilities, order_keys, order_length)
-
+        else:
+            self.order = None
+            if order_probabilities is not None:
+                self.order = self.sample_from_probabilities(
+                    order_probabilities, order_keys, order_length)
 
         self.maxrep = maxrep
         self.hardprob = hardprob
         self.confoundorder = confoundorder
 
-
-        #Addding a conditional ITI where you can have a number of stimulus and it can have different ITI's
-        if conditional_ITI is not None: 
-            self.conditional_ITI = conditional_ITI
-        else: 
-            self.conditional_ITI = None
-        # else: 
-        #     self.conditional_ITI = {
-        #         (0, 1): {"model": "exponential", "mean": 2, "min": 1},
-        #         (1, 2): {"model": "fixed", "mean": 4},
-        #         "default": {"model": "exponential", "mean": 3, "min": 1}
-        #     }
-
+        # Addding a conditional ITI where you can have a number of stimulus and it can have different ITI's
+        self.conditional_ITI = conditional_ITI
 
         self.ITImodel = ITImodel
         self.ITImin = ITImin
         self.ITImean = ITImean
         self.ITImax = ITImax
         self.ITIlam = None
-
-        #Generating a default ITI for the experiment (if not provided)
-        if ITI is not None:
-            assert len(ITI) == n_trials, "ITI length must be the same "
-            self.ITI = ITI
-        elif self.conditional_ITI is not None and order is not None: 
-            self.ITI = self.generate_iti(order, self.conditional_ITI)
-        else: 
-            self.ITI, ITIlam = generate.iti(
-                ntrials=self.n_trials,
-                model=self.ITImodel,
-                min=self.ITImin,
-                max=self.ITImax,
-                mean=self.ITImean,
-                lam=self.ITIlam,
-                seed= np.random.randint(10000),
-                resolution=self.resolution,
-            )
-            if ITIlam:
-                self.ITIlam = ITIlam
 
         self.restnum = restnum
         self.restdur = restdur
@@ -662,48 +666,34 @@ class Experiment:
         return self
 
     def countstim(self):
-        """Compute some arguments depending on other arguments."""
+        """Compute some arguments depending on other arguments.
+
+        Duration is always computed from EXPECTED values (trial_max + ITImean)
+        so the whitening matrix is stable across all designs in a population.
+        Individual designs may have shorter actual timing — the unused
+        timepoints in the design matrix are simply zeros (equivalent to rest).
+        """
         self.trial_duration = self.trial_max + self.t_pre + self.t_post
 
         if self.ITImodel == "uniform":
             self.ITImean = (self.ITImax + self.ITImin) / 2
 
-        if self.stimuli_durations is None: 
-            #Specific n_trials and duration conditions to avoid updates when both are provided (pre_calculated)
-            #If both are provided no further calculations required
-            if self.n_trials is not None and self.duration == None:
-                if self.conditional_ITI is None:
-                    ITIdur = self.n_trials * self.ITImean
-                else: 
-                    ITIdur = self.n_trials * self.ITImax
-                TRIALdur = self.n_trials * self.trial_duration
-                duration = ITIdur + TRIALdur
-                if self.restnum > 0:
-                    duration = duration + (
-                        np.floor(self.n_trials / self.restnum) * self.restdur
-                    )
-                self.duration = duration
-            elif self.duration is not None and self.n_trials == None:
-                self.n_trials = self._compute_n_trials()
-        else:
-            assert self.n_trials is not None, "Must have n_trials provided with variable stimuli durations"
-            if self.order_fixed: 
-                self.calculate_all_stimuli()
-                TRIALdur = sum(self.all_stim_durations)
-                self.duration = self.calculate_duration(self.ITI, self.all_stim_durations)
-            else: 
-                if self.conditional_ITI is None:
-                    ITIdur = self.n_trials * self.ITImean
-                else: 
-                    ITIdur = self.n_trials * self.ITImax
-                TRIALdur = self.n_trials * self.trial_duration
-                duration = ITIdur + TRIALdur
-                self.duration = duration
-               
-                
+        # Always compute duration from expected values, regardless of
+        # whether stimuli_durations is set. This keeps the container stable.
+        if self.n_trials is not None and self.duration is None:
+            ITIdur = self.n_trials * self.ITImean
+            TRIALdur = self.n_trials * self.trial_duration
+            duration = ITIdur + TRIALdur
+            if self.restnum > 0:
+                duration = duration + (
+                    np.floor(self.n_trials / self.restnum) * self.restdur
+                )
+            self.duration = duration
+        elif self.duration is not None and self.n_trials is None:
+            self.n_trials = self._compute_n_trials()
 
+    # Computes the n_trials given the duration
 
-    #Computes the n_trials given the duration
     def _compute_n_trials(self):
         if self.restnum == 0:
             return int(self.duration / (self.ITImean + self.trial_duration))
@@ -820,33 +810,36 @@ class Experiment:
         s = np.array(s)
         res = (h - 1) * np.log(s) + h * np.log(l) - l * s - np.log(gamma(h))
         return np.exp(res)
-    
 
-    #Calculating the new duration and all_stimuli lengths and trial_durations based on new order
-    def calculate_all_stimuli(self, order = None):
-        self.all_stim_durations = []
+    @staticmethod
+    def sample_stim_durations(order, stimuli_durations, t_pre, t_post):
+        """Sample concrete stimulus durations for a specific trial order.
 
-        if order is not None: 
-            order_used = order
-        else:
-            order_used = self.order
+        Called per-Design (not per-Experiment) so each design gets its own
+        random draw, but they all share the same Experiment container.
 
-        for i in range(len(order_used)):
-            stimuli = order_used[i]
-            key = self.stimuli_durations[stimuli]
-            
-            if isinstance(key, dict): 
+        Returns a list of durations (including t_pre + t_post per trial).
+        """
+        all_stim_durations = []
+        for i in range(len(order)):
+            stimuli = order[i]
+            key = stimuli_durations[stimuli]
+
+            if isinstance(key, dict):
                 params = key
 
                 if params["model"] == "fixed":
-                    self.all_stim_durations.append(params["mean"])
+                    all_stim_durations.append(params["mean"])
                 elif params["model"] == "exponential":
                     val = np.random.exponential(scale=params["mean"])
                     if "min" in params:
                         val = max(val, params["min"])
-                    self.all_stim_durations.append(val)
+                    if "max" in params:
+                        val = min(val, params["max"])
+                    all_stim_durations.append(val)
                 elif params["model"] == "uniform":
-                    self.all_stim_durations.append(np.random.uniform(params["min"], params["max"]))
+                    all_stim_durations.append(
+                        np.random.uniform(params["min"], params["max"]))
                 elif params["model"] == "gaussian":
                     mean = params.get("mean", 0)
                     std = params.get("std", 1)
@@ -855,33 +848,29 @@ class Experiment:
                         val = max(val, params["min"])
                     if "max" in params:
                         val = min(val, params["max"])
+                    all_stim_durations.append(val)
 
-                    self.all_stim_durations.append(val)
+            else:
+                all_stim_durations.append(key)
 
-            else: 
-                self.all_stim_durations.append(key)
-        
-        assert len(self.all_stim_durations) == len(order_used)
+        assert len(all_stim_durations) == len(order)
 
-        self.all_stim_durations = [d + self.t_pre + self.t_post for d in self.all_stim_durations]
-        # print(sum(self.all_stim_durations))
-        if self.conditional_ITI is not None:
-            ITI_touse = [self.ITImax] * self.n_trials
-        else: 
-            ITI_touse = self.ITI
-        self.duration = self.calculate_duration(ITI_touse, self.all_stim_durations)
+        # Add pre/post time to each trial duration
+        all_stim_durations = [d + t_pre + t_post for d in all_stim_durations]
+        return all_stim_durations
 
-    #Added functions
-    #Generates ITI with the first value being the default then the order. (ensures n_trials and ITI length is the same)
-    def generate_iti(self, order, conditional_iti):
+    # Added functions
+    # Generates ITI with the first value being the default then the order. (ensures n_trials and ITI length is the same)
+    @staticmethod
+    def generate_iti(order, conditional_iti):
         ITI = []
 
         for i in range(len(order)):
             stim_prev = order[i - 1] if i > 0 else None
             stim_curr = order[i]
 
-            if stim_prev is not None or stim_curr is not None: 
-            # Determine key for condition-based ITI
+            if stim_prev is not None or stim_curr is not None:
+                # Determine key for condition-based ITI
                 key = (stim_prev, stim_curr) if stim_prev is not None else "default"
                 params = conditional_iti.get(key, conditional_iti.get("default"))
 
@@ -905,22 +894,23 @@ class Experiment:
                         val = max(val, params["min"])
                     if "max" in params:
                         val = min(val, params["max"])
-
-                    ITI.append(val)
+                    ITI.append(val)  # FIX: was self.all_stim_durations.append(val)
         return ITI
 
-    #Generates/calculates the duration based on stimuli_duration and ITI
-    def calculate_duration(self, ITI, dur):
+    # Generates/calculates the duration based on stimuli_duration and ITI
+    @staticmethod
+    def calculate_duration(ITI, dur):
         total_sum = sum(dur)
-        total_sum = total_sum + sum(ITI)  
+        total_sum = total_sum + sum(ITI)
         return total_sum
-    
-    #Generates an order based on a given probability distribution of certain keys
-    def sample_from_probabilities(self, prob, key, length):
+
+    # Generates an order based on a given probability distribution of certain keys
+    @staticmethod
+    def sample_from_probabilities(prob, key, length):
         # random.choices picks elements from key with weights = prob_array\
         samples = random.choices(key, weights=prob, k=length)
         merged = [item for sublist in samples for item in sublist]
-        return merged[:self.n_trials]
+        return merged[:length]
 
 
 class Optimisation:
@@ -1079,29 +1069,30 @@ class Optimisation:
             ind = np.sum(NDes >= np.cumsum(R))
             ordertype = ["blocked", "random", "msequence"][ind]
 
-            #Modified by Atharv Umap
+            # --- Sample order ---
             order = None
 
-            if self.exp.order_fixed: 
+            if self.exp.order_fixed:
                 order = self.exp.order
             elif self.exp.order_probabilities is None:
                 order = generate.order(
-                self.exp.n_stimuli,
-                self.exp.n_trials,
-                self.exp.P,
-                ordertype=ordertype,
-                seed=self.seed,
+                    self.exp.n_stimuli,
+                    self.exp.n_trials,
+                    self.exp.P,
+                    ordertype=ordertype,
+                    seed=self.seed,
                 )
             else:
-                order = self.exp.sample_from_probabilities(self.exp.order_probabilities, self.exp.order_keys, self.exp.order_length)
-        
-            #If conditional_ITI not provided use default ITI calculation, else use custom calculation.
+                order = Experiment.sample_from_probabilities(
+                    self.exp.order_probabilities, self.exp.order_keys, self.exp.order_length
+                )
+
+            # --- Sample ITI ---
             ITI = []
-            if self.exp.conditional_ITI is None: 
+            if self.exp.conditional_ITI is None:
                 ITI, ITIlam = generate.iti(
                     ntrials=self.exp.n_trials,
                     model=self.exp.ITImodel,
-                    
                     min=self.exp.ITImin,
                     max=self.exp.ITImax,
                     mean=self.exp.ITImean,
@@ -1111,52 +1102,25 @@ class Optimisation:
                 )
                 if ITIlam:
                     self.exp.ITIlam = ITIlam
-            else: 
-                ITI = self.exp.generate_iti(order, self.exp.conditional_ITI)
-
-
-            des = None
-            #des = Design(order=order, ITI=np.array(ITI), experiment=self.exp)
-            if self.exp.conditional_ITI is not None or self.exp.order_probabilities is not None:
-                new_exp = Experiment(
-                    TR = self.exp.TR,
-                    P = self.exp.P,
-                    C = self.exp.C,
-                    rho = self.exp.rho,
-                    stim_duration = self.exp.stim_duration,
-                    n_stimuli = self.exp.n_stimuli,
-                    stimuli_durations = self.exp.stimuli_durations, 
-                    ITI = ITI, 
-                    conditional_ITI = self.exp.conditional_ITI, #Adding a new input for ITI's that can be controlled by the user.
-                    ITImodel= self.exp.ITImodel,
-                    ITImin= self.exp.ITImin,
-                    ITImax= self.exp.ITImax,
-                    ITImean= self.exp.ITImean,
-                    restnum= self.exp.restnum,
-                    restdur= self.exp.restdur,
-                    t_pre=self.exp.t_pre,
-                    t_post=self.exp.t_post,
-                    n_trials= self.exp.n_trials,
-                    resolution= self.exp.resolution,
-                    FeMax= self.exp.FeMax,
-                    FdMax= self.exp.FdMax,
-                    FcMax= self.exp.FcMax ,
-                    FfMax= self.exp.FfMax,
-                    maxrep= self.exp.maxrep,
-                    hardprob= self.exp.hardprob,
-                    confoundorder= self.exp.confoundorder,
-                    order = order, 
-                    order_probabilities = self.exp.order_probabilities,
-                    order_keys = self.exp.order_keys, 
-                    order_length = self.exp.order_length,
-                    order_fixed = self.exp.order_fixed,
-                    trial_max= self.exp.trial_max
-                )
-               
-                des = Design(order=order, ITI=np.array(ITI), experiment=new_exp)
             else:
-                des = Design(order=order, ITI=np.array(ITI), experiment=self.exp)
-            
+                ITI = Experiment.generate_iti(order, self.exp.conditional_ITI)
+
+            # --- Sample per-trial stimulus durations (if variable) ---
+            all_stim_durations = None
+            if self.exp.stimuli_durations is not None:
+                all_stim_durations = Experiment.sample_stim_durations(
+                    order, self.exp.stimuli_durations,
+                    self.exp.t_pre, self.exp.t_post,
+                )
+
+            # --- Create Design with the ONE shared Experiment ---
+            des = Design(
+                order=order,
+                ITI=np.array(ITI),
+                experiment=self.exp,
+                all_stim_durations=all_stim_durations,
+            )
+
             fulldes = self.check_develop(des, weights)
 
             if fulldes is False:
@@ -1169,7 +1133,7 @@ class Optimisation:
     def _clean_designs(self, weights):
         n = 0
         rm = 0
-        while n == 0: 
+        while n == 0:
             orders = [x.order for x in self.designs]
             cors = np.corrcoef(orders)
             isone = np.isclose(cors, 1.0)
@@ -1186,8 +1150,6 @@ class Optimisation:
                         des for ind, des in enumerate(self.designs) if ind not in remove
                     ]
                     rm = rm + len(remove)
-                
-                
 
         self.add_new_designs(R=[0, rm, 0], weights=weights)
 
@@ -1281,8 +1243,8 @@ class Optimisation:
         if weights is None:
             weights = self.weights
 
-        #If the order is fixed, we don't want to perform crossover or mutation on the designs
-        if not self.exp.order_fixed and not self.exp.order_probabilities: 
+        # If the order is fixed, we don't want to perform crossover or mutation on the designs
+        if not self.exp.order_fixed:
             self._clean_designs(weights)
             if optimisation == "GA":
                 self._mutation(weights, seed)
@@ -1293,7 +1255,7 @@ class Optimisation:
                 self._immigration(weights, noim=self.I)
             else:
                 print("Unknown optimisation type")
-        else: 
+        else:
             self._immigration(weights, noim=self.I)
 
         # inspect efficiencies
@@ -1309,7 +1271,6 @@ class Optimisation:
         gen = len(self.optima)
         if gen > 1000 and self.optima[-1] > self.optima[gen - 1000]:
             self.finished = True
-            
 
         # select best G
         cutoff = np.sort(efficiencies)[::-1][self.G]
@@ -1326,7 +1287,8 @@ class Optimisation:
 
         if self.bestdesign:
             bestdes = Design(
-                order=self.bestdesign.order, ITI=self.bestdesign.ITI, experiment=self.exp
+                order=self.bestdesign.order, ITI=self.bestdesign.ITI, experiment=self.exp,
+                all_stim_durations=self.bestdesign.all_stim_durations,
             )
             bestdes = self.check_develop(bestdes)
             if bestdes is not False:
@@ -1363,10 +1325,10 @@ class Optimisation:
                     description="optimize", total=len(range(self.preruncycles))
                 )
                 for _ in range(self.preruncycles):
-                        self.to_next_generation(seed=self.seed, weights=[0, 1, 0, 0])
-                        progress.update(task, advance=1)
-                        if self.finished:
-                            continue
+                    self.to_next_generation(seed=self.seed, weights=[0, 1, 0, 0])
+                    progress.update(task, advance=1)
+                    if self.finished:
+                        continue
             self.exp.FdMax = np.max(self.bestdesign.F)
 
         # clear all attributes
@@ -1519,6 +1481,3 @@ def _round_to_resolution(inmat, res):
     ind = out / res
     ind = [int(x) for x in ind]
     return out, ind
-
-
-
