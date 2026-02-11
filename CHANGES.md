@@ -19,27 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
-## [Unreleased]
+## [1.0.0] - 2026-02-11
+
+First release of `neurodesign-plus` on PyPI.
 
 ### Added
 
-* Automated tersting with tox, pytest and github actions.
+* Variable stimulus durations via `stimuli_durations` parameter on `Experiment`.
+* Conditional ITI distributions via `conditional_ITI` parameter on `Experiment`.
+* Fixed user-defined stimulus ordering via `order` parameter on `Experiment`.
+* Probabilistic ordering via `order_probabilities`, `order_keys`, `order_length` parameters.
+* New static methods: `sample_stim_durations`, `generate_iti`, `calculate_duration`, `sample_from_probabilities`.
+* Automated testing with tox, pytest, and GitHub Actions.
+* Comprehensive documentation hosted on ReadTheDocs.
+* 10 tutorial notebooks covering base and new features.
+* Detailed manuals on metrics, installation, and technical changes.
 
 ### Changed
 
-* Classes Experiment, Design and Optimisation have been renamed (Capitalised).
-* Code formatted with blac.
+* Published on PyPI as `neurodesign-plus` (import remains `import neurodesign`).
+* Classes Experiment, Design and Optimisation have been renamed (capitalised).
+* Experiment-Design separation enforced: per-trial arrays stored on Design, specifications on Experiment.
+* Optimisation skips Fe/Fd calibration pre-runs when corresponding weight is zero.
+* Code formatted with black.
 * flake8 errors were fixed.
 * Packaging reorganized to use hatch and pyproject.toml.
 * Use rich for progress bar.
-
-### Deprecated
-
-### Removed
-
-### Fixed
-
-### Security
 
 ## [0.2.02] - 2018-08-24
 

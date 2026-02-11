@@ -45,6 +45,13 @@ dependencies = [
     "matplotlib"
 ]
 
+[project.urls]
+Homepage = "https://github.com/SLDlab/neurodesign-plus"
+Documentation = "https://neurodesign-plus.readthedocs.io"
+Repository = "https://github.com/SLDlab/neurodesign-plus"
+Changelog = "https://github.com/SLDlab/neurodesign-plus/blob/master/CHANGES.md"
+"Bug Tracker" = "https://github.com/SLDlab/neurodesign-plus/issues"
+
 [project.optional-dependencies]
 dev = [
     "neurodesign-plus[doc,test]",
@@ -53,8 +60,11 @@ dev = [
 ]
 
 doc = [
-    "sphinx",
-    "sphinx-copybutton"
+    "sphinx>=7.0",
+    "sphinx-copybutton",
+    "furo",
+    "myst-parser>=2.0",
+    "sphinx-autodoc-typehints"
 ]
 
 test = [
