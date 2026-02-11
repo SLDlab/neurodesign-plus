@@ -94,7 +94,7 @@ skip_gitignore = true
 
 [tool.codespell]
 ignore-words = ".github/codespell_ignore_words.txt"
-skip = "examples/comparison_neurodesign.html,examples/comparison_neurodesign.ipynb"
+skip = ""
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers --doctest-modules --showlocals -s -vv --durations=0"
