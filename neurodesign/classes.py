@@ -129,6 +129,11 @@ class Design:
         if self.experiment.order_fixed:
             offspringorder1 = self.order
             offspringorder2 = other.order
+        elif self.experiment.order_probabilities is not None:
+            offspringorder1 = Experiment.sample_from_probabilities(
+                    self.experiment.order_probabilities, self.experiment.order_keys, self.experiment.order_length)
+            offspringorder2 = Experiment.sample_from_probabilities(
+                    self.experiment.order_probabilities, self.experiment.order_keys, self.experiment.order_length)
         else:
             offspringorder1 = list(self.order)[
                 :changepoint] + list(other.order)[changepoint:]
@@ -175,7 +180,7 @@ class Design:
         )
         mutated = copy.copy(self.order)
 
-        if not self.experiment.order_fixed:
+        if not self.experiment.order_fixed and self.experiment.order_probabilities is None:
             for mut in mut_ind:
                 np.random.seed(seed)
                 mut_stim = np.random.choice(self.experiment.n_stimuli, 1, replace=True)[0]
@@ -905,7 +910,7 @@ class Experiment:
         # random.choices picks elements from key with weights = prob_array\
         samples = random.choices(key, weights=prob, k=length)
         merged = [item for sublist in samples for item in sublist]
-        return merged
+        return merged[:length]
 
 
 class Optimisation:
