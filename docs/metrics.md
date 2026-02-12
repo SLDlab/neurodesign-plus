@@ -1,0 +1,2 @@
+```{include} ../manuals/METRICS.md
+```

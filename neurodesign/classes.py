@@ -961,7 +961,7 @@ class Optimisation:
 
     def __init__(
         self,
-        experiment: experiment,
+        experiment: Experiment,
         weights: list[float],
         preruncycles: int,
         cycles: int,
