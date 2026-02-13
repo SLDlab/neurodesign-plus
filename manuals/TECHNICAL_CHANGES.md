@@ -47,7 +47,7 @@ This guarantees that all efficiency metrics (Fe, Fd) are computed against the sa
         conditional_ITI = {
             (0, 1): {"model": "exponential", "mean": 2, "min": 1},
             (1, 2): {"model": "fixed", "mean": 4},
-            "default": {"model": "exponential", "mean": 3, "min": 1}
+            "default": {"model": "exponential", "mean": 3, "min": 1},
         }
         ```
 

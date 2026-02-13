@@ -49,12 +49,6 @@ repos:
         args: [--toml, pyproject.toml]
         additional_dependencies: [tomli]
 
--   repo: https://github.com/jumanjihouse/pre-commit-hook-yamlfmt
-    rev: 0.2.3
-    hooks:
-    -   id: yamlfmt
-        args: [--mapping, '4', --sequence, '4', --offset, '0']
-
 -   repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0
     hooks:

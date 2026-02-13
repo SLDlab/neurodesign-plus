@@ -3,22 +3,11 @@ build-backend = "hatchling.build"
 requires = ["hatchling", "hatch-vcs"]
 
 [project]
-name = "neurodesign-plus"
-description = "Extended and maintained fork of the neurodesign package for fMRI experimental design optimisation"
-readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "MIT"}
-dynamic = ["version"]
-
 authors = [
-    {name = "Joke Durnez"}
-]
-
-maintainers = [
+    {name = "Joke Durnez"},
     {name = "Atharv Umap"},
     {name = "Valentin Guigon"}
 ]
-
 classifiers = [
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
@@ -36,7 +25,6 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development"
 ]
-
 dependencies = [
     "scikit-learn>0.15.0",
     "rich",
@@ -44,13 +32,16 @@ dependencies = [
     "pdfrw",
     "matplotlib"
 ]
-
-[project.urls]
-Homepage = "https://github.com/SLDlab/neurodesign-plus"
-Documentation = "https://neurodesign-plus.readthedocs.io"
-Repository = "https://github.com/SLDlab/neurodesign-plus"
-Changelog = "https://github.com/SLDlab/neurodesign-plus/blob/master/CHANGES.md"
-"Bug Tracker" = "https://github.com/SLDlab/neurodesign-plus/issues"
+description = "Extended and maintained fork of the neurodesign package for fMRI experimental design optimisation"
+dynamic = ["version"]
+license = {text = "MIT"}
+maintainers = [
+    {name = "Atharv Umap"},
+    {name = "Valentin Guigon"}
+]
+name = "neurodesign-plus"
+readme = "README.md"
+requires-python = ">=3.9"
 
 [project.optional-dependencies]
 dev = [
@@ -58,7 +49,6 @@ dev = [
     "pre-commit",
     "tox"
 ]
-
 doc = [
     "sphinx>=7.0",
     "sphinx-copybutton",
@@ -66,7 +56,6 @@ doc = [
     "myst-parser>=2.0",
     "sphinx-autodoc-typehints"
 ]
-
 test = [
     "coverage",
     "pytest>=6.0.0",
@@ -74,8 +63,19 @@ test = [
     "nbmake"
 ]
 
-[tool.hatch.version]
-source = "vcs"
+[project.urls]
+"Bug Tracker" = "https://github.com/SLDlab/neurodesign-plus/issues"
+Changelog = "https://github.com/SLDlab/neurodesign-plus/blob/master/CHANGES.md"
+Documentation = "https://neurodesign-plus.readthedocs.io"
+Homepage = "https://github.com/SLDlab/neurodesign-plus"
+Repository = "https://github.com/SLDlab/neurodesign-plus"
+
+[tool.black]
+line-length = 90
+
+[tool.codespell]
+ignore-words = ".github/codespell_ignore_words.txt"
+skip = "*.ipynb"
 
 [tool.hatch.build.hooks.vcs]
 version-file = "neurodesign/_version.py"
@@ -83,18 +83,14 @@ version-file = "neurodesign/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["neurodesign"]
 
-[tool.black]
-line-length = 90
+[tool.hatch.version]
+source = "vcs"
 
 [tool.isort]
-profile = "black"
-line_length = 90
 combine_as_imports = true
+line_length = 90
+profile = "black"
 skip_gitignore = true
-
-[tool.codespell]
-ignore-words = ".github/codespell_ignore_words.txt"
-skip = ""
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers --doctest-modules --showlocals -s -vv --durations=0"

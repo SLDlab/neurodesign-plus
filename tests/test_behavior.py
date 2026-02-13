@@ -34,17 +34,18 @@ except ModuleNotFoundError:
         "TimeElapsedColumn",
         "TimeRemainingColumn",
     ]:
-        setattr(rich_progress, name, type(
-            name, (), {"__init__": lambda self, *a, **kw: None}))
+        setattr(
+            rich_progress, name, type(name, (), {"__init__": lambda self, *a, **kw: None})
+        )
     sys.modules["rich.progress"] = rich_progress
 
 # Now import the actual installed neurodesign classes
 from neurodesign.classes import Design, Experiment  # noqa: E402
 
-
 # ============================================================
 # TEST HELPERS
 # ============================================================
+
 
 def make_basic_experiment(**overrides):
     """Create a basic 3-stimulus experiment with defaults."""
@@ -155,8 +156,9 @@ def test_variable_dur_fe_bounded():
         asd = Experiment.sample_stim_durations(
             order, exp.stimuli_durations, exp.t_pre, exp.t_post
         )
-        des = Design(order=order, ITI=np.array(iti), experiment=exp,
-                     all_stim_durations=asd)
+        des = Design(
+            order=order, ITI=np.array(iti), experiment=exp, all_stim_durations=asd
+        )
         result = des.designmatrix()
         if result is False:
             continue
@@ -173,8 +175,9 @@ def test_variable_dur_fe_bounded():
         asd = Experiment.sample_stim_durations(
             order, exp.stimuli_durations, exp.t_pre, exp.t_post
         )
-        des = Design(order=order, ITI=np.array(iti), experiment=exp,
-                     all_stim_durations=asd)
+        des = Design(
+            order=order, ITI=np.array(iti), experiment=exp, all_stim_durations=asd
+        )
         result = des.designmatrix()
         if result is False:
             continue
@@ -203,13 +206,14 @@ def test_shared_experiment():
         asd = Experiment.sample_stim_durations(
             order, exp.stimuli_durations, exp.t_pre, exp.t_post
         )
-        des = Design(order=order, ITI=np.array(iti), experiment=exp,
-                     all_stim_durations=asd)
+        des = Design(
+            order=order, ITI=np.array(iti), experiment=exp, all_stim_durations=asd
+        )
         experiments_seen.add(id(des.experiment))
 
-    assert len(experiments_seen) == 1, (
-        f"Found {len(experiments_seen)} Experiment objects, expected 1"
-    )
+    assert (
+        len(experiments_seen) == 1
+    ), f"Found {len(experiments_seen)} Experiment objects, expected 1"
     print(f"  All 10 designs share Experiment at {experiments_seen.pop()}")
     print("  PASSED\n")
 
@@ -234,8 +238,7 @@ def test_short_design_fits_container():
         order, exp.stimuli_durations, exp.t_pre, exp.t_post
     )
 
-    des = Design(order=order, ITI=np.array(iti), experiment=exp,
-                 all_stim_durations=asd)
+    des = Design(order=order, ITI=np.array(iti), experiment=exp, all_stim_durations=asd)
     des.designmatrix()
     des.FeCalc()
     print(f"  Fe = {des.Fe:.4f}, container n_tp = {exp.n_tp}")
@@ -262,7 +265,9 @@ def test_long_iti_truncation():
     result = des.designmatrix()
 
     if result is False:
-        print("  Design correctly rejected (returned False) — overflow handled gracefully")
+        print(
+            "  Design correctly rejected (returned False) — overflow handled gracefully"
+        )
         print("  PASSED\n")
         return True
     else:
@@ -320,7 +325,8 @@ def test_sample_stim_durations():
     ]
 
     asd = Experiment.sample_stim_durations(
-        order, stimuli_durations, t_pre=0.5, t_post=0.0)
+        order, stimuli_durations, t_pre=0.5, t_post=0.0
+    )
     assert len(asd) == 6
     expected = [1.5, 2.0, 2.5, 1.5, 2.0, 2.5]
     assert np.allclose(asd, expected), f"Expected {expected}, got {asd}"
@@ -353,9 +359,11 @@ def test_crossover_propagates_asd():
     iti = np.array([2.0] * 30)
 
     asd1 = Experiment.sample_stim_durations(
-        order1, exp.stimuli_durations, exp.t_pre, exp.t_post)
+        order1, exp.stimuli_durations, exp.t_pre, exp.t_post
+    )
     asd2 = Experiment.sample_stim_durations(
-        order2, exp.stimuli_durations, exp.t_pre, exp.t_post)
+        order2, exp.stimuli_durations, exp.t_pre, exp.t_post
+    )
 
     des1 = Design(order=order1, ITI=iti, experiment=exp, all_stim_durations=asd1)
     des2 = Design(order=order2, ITI=iti, experiment=exp, all_stim_durations=asd2)
@@ -363,7 +371,9 @@ def test_crossover_propagates_asd():
     offspring = des1.crossover(des2, seed=42)
 
     for i, baby in enumerate(offspring):
-        assert baby.all_stim_durations is not None, f"Offspring {i} lost all_stim_durations"
+        assert (
+            baby.all_stim_durations is not None
+        ), f"Offspring {i} lost all_stim_durations"
         assert len(baby.all_stim_durations) == 30, f"Offspring {i} wrong asd length"
         assert id(baby.experiment) == id(exp), f"Offspring {i} has different Experiment!"
 
@@ -382,7 +392,8 @@ def test_mutation_propagates_asd():
     order = list(rng.choice(3, size=30, p=[1 / 3, 1 / 3, 1 / 3]))
     iti = np.array([2.0] * 30)
     asd = Experiment.sample_stim_durations(
-        order, exp.stimuli_durations, exp.t_pre, exp.t_post)
+        order, exp.stimuli_durations, exp.t_pre, exp.t_post
+    )
 
     des = Design(order=order, ITI=iti, experiment=exp, all_stim_durations=asd)
     mutant = des.mutation(0.1, seed=42)
@@ -406,7 +417,8 @@ def test_fixed_order():
 
     iti = np.array([2.0] * 30)
     asd = Experiment.sample_stim_durations(
-        fixed_order, exp.stimuli_durations, exp.t_pre, exp.t_post)
+        fixed_order, exp.stimuli_durations, exp.t_pre, exp.t_post
+    )
 
     des1 = Design(order=fixed_order, ITI=iti, experiment=exp, all_stim_durations=asd)
     des2 = Design(order=fixed_order, ITI=iti, experiment=exp, all_stim_durations=asd)
@@ -433,7 +445,8 @@ def test_restnum_with_variable_durations():
     order = list(rng.choice(3, size=30, p=[1 / 3, 1 / 3, 1 / 3]))
     iti = [2.0] * 30
     asd = Experiment.sample_stim_durations(
-        order, exp.stimuli_durations, exp.t_pre, exp.t_post)
+        order, exp.stimuli_durations, exp.t_pre, exp.t_post
+    )
 
     des = Design(order=order, ITI=np.array(iti), experiment=exp, all_stim_durations=asd)
 
@@ -447,6 +460,7 @@ def test_restnum_with_variable_durations():
     except Exception as e:
         print(f"  FAILED with error: {e}")
         import traceback
+
         traceback.print_exc()
         print()
 
@@ -487,6 +501,7 @@ if __name__ == "__main__":
             results[name] = f"FAILED: {e}"
             failed += 1
             import traceback
+
             traceback.print_exc()
             print()
 

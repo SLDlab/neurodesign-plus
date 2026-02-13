@@ -24,13 +24,13 @@ You can do this either through the VS Code interface or directly in the terminal
 
 **A. Using VS Code GUI:**
 
-1. Open the Command Palette:  
+1. Open the Command Palette:
    `View > Command Palette`
-2. Search for and select:  
+2. Search for and select:
    `Python: Select Interpreter`
-3. Click:  
+3. Click:
    `+ Create Environment`
-4. Choose the environment type:  
+4. Choose the environment type:
    `venv`
 5. Select a Python interpreter (version `>= 3.9`, e.g., `Python 3.13.1`)
 
