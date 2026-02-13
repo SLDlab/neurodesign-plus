@@ -1,5 +1,4 @@
-"""
-Test suite for neurodesign.classes (behavioral tests)
+"""Test suite for neurodesign.classes (behavioral tests).
 
 Assumes the neurodesign package is installed and importable.
 
@@ -9,8 +8,8 @@ we provide a minimal stub so the import path does not fail.
 
 import sys
 import types
+
 import numpy as np
-import copy
 
 # ============================================================
 # Optional: stub rich if missing
@@ -40,7 +39,7 @@ except ModuleNotFoundError:
     sys.modules["rich.progress"] = rich_progress
 
 # Now import the actual installed neurodesign classes
-from neurodesign.classes import Design, Experiment, Optimisation
+from neurodesign.classes import Design, Experiment  # noqa: E402
 
 
 # ============================================================

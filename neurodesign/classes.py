@@ -94,8 +94,7 @@ class Design:
         return repcheck
 
     def check_hardprob(self):
-        """Check whether frequencies of stimuli 
-           are **exactly** the prespecified frequencies.
+        """Check whether frequencies match the prespecified frequencies.
 
         :returns probcheck: Boolean indicating probabilities are respected
         """
@@ -257,7 +256,9 @@ class Design:
                 self.onsets = np.cumsum(ITIli) - self.experiment.trial_duration
             else:
                 # Modified by Atharv Umap
-                ITIli_new = [y + x for x, y in zip(self.all_stim_durations, ITIli)]
+                ITIli_new = [
+                    y + x for x, y in zip(self.all_stim_durations, ITIli)
+                ]
                 ITIli_cumsum = np.cumsum(ITIli_new)
 
                 onsets_temp = []
@@ -590,7 +591,7 @@ class Experiment:
         # The Experiment only stores the *specification* (stimuli_durations dict/list).
 
         # Modification
-        # Working wiht multiple stimuli durations
+        # Working with multiple stimuli durations
         if stimuli_durations is not None:
             assert len(
                 stimuli_durations) == n_stimuli, "Must specify a duration for each stimulus"
@@ -620,7 +621,7 @@ class Experiment:
         self.hardprob = hardprob
         self.confoundorder = confoundorder
 
-        # Addding a conditional ITI where you can have a number of stimulus and it can have different ITI's
+        # Adding a conditional ITI for stimulus-dependent intervals
         self.conditional_ITI = conditional_ITI
 
         self.ITImodel = ITImodel
@@ -718,7 +719,7 @@ class Experiment:
         return int(n_trials)
 
     def CreateTsComp(self):
-        """Compute the number of scans and timpoints (in seconds and resolution units)."""
+        """Compute the number of scans and timepoints (in seconds and resolution units)."""
         self.n_scans = int(np.ceil(self.duration / self.TR))  # number of scans
         # number of timepoints  (in resolution)
         self.n_tp = int(np.ceil(self.duration / self.resolution))
@@ -894,12 +895,12 @@ class Experiment:
                         val = max(val, params["min"])
                     if "max" in params:
                         val = min(val, params["max"])
-                    ITI.append(val)  # FIX: was self.all_stim_durations.append(val)
+                    ITI.append(val)
         return ITI
 
-    # Generates/calculates the duration based on stimuli_duration and ITI
     @staticmethod
     def calculate_duration(ITI, dur):
+        """Calculate total duration from ITI and trial durations."""
         total_sum = sum(dur)
         total_sum = total_sum + sum(ITI)
         return total_sum
@@ -1279,7 +1280,7 @@ class Optimisation:
         return self
 
     def clear(self):
-        """Clear results between optimalisations (maximum Fe, Fd or opt)."""
+        """Clear results between optimisations (maximum Fe, Fd or opt)."""
         self.designs = []
         self.optima = []
         self.finished = False
@@ -1287,7 +1288,9 @@ class Optimisation:
 
         if self.bestdesign:
             bestdes = Design(
-                order=self.bestdesign.order, ITI=self.bestdesign.ITI, experiment=self.exp,
+                order=self.bestdesign.order,
+                ITI=self.bestdesign.ITI,
+                experiment=self.exp,
                 all_stim_durations=self.bestdesign.all_stim_durations,
             )
             bestdes = self.check_develop(bestdes)

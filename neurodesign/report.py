@@ -50,7 +50,7 @@ def make_report(population, outfile: str | Path = "NeuroDesign.pdf"):
     story.append(im)
     story.append(Spacer(1, 12))
 
-    title = "NeuroDesign: optimalisation report"
+    title = "NeuroDesign: optimisation report"
     story.append(Paragraph(title, styles["title"]))
     story.append(Spacer(1, 12))
 
