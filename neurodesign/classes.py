@@ -346,7 +346,7 @@ class Design:
 
         X_Z = X_Z[idxX, :]
         X_X = X_X[idxX, :]
-        Zwhite = t(X_Z) * self.experiment.white * X_Z
+        Zwhite = t(X_Z) @ self.experiment.white @ X_Z
 
         self.X = Xwhite
         self.Z = Zwhite
@@ -376,7 +376,7 @@ class Design:
         st1 = np.dot(self.CX, invM)
         CMC = np.dot(st1, t(self.CX))
         if Aoptimality is True:
-            self.Fe = float(self.CX.shape[0] / np.matrix.trace(CMC))
+            self.Fe = float(self.CX.shape[0] / np.trace(CMC))
         else:
             self.Fe = float(np.linalg.det(CMC) ** (-1 / len(self.C)))
         self.Fe = self.Fe / self.experiment.FeMax
@@ -398,9 +398,9 @@ class Design:
                 invM = np.nan
 
         invM = np.array(invM)
-        CMC = np.matrix(self.C) * invM * np.matrix(t(self.C))
+        CMC = self.C @ invM @ t(self.C)
         if Aoptimality is True:
-            self.Fd = float(len(self.C) / np.matrix.trace(CMC))
+            self.Fd = float(len(self.C) / np.trace(CMC))
         else:
             self.Fd = float(np.linalg.det(CMC) ** (-1 / len(self.C)))
         self.Fd = self.Fd / self.experiment.FdMax
@@ -746,7 +746,7 @@ class Experiment:
         # drift
         self.S = self.drift(np.arange(0, self.n_scans))  # [tp x 1]
         assert self.S.shape == (3, self.n_scans)
-        self.S = np.matrix(self.S)
+        self.S = np.asarray(self.S)
 
         # square of the whitening matrix
         base = [1 + self.rho**2, -1 * self.rho] + [0] * (self.n_scans - 2)
@@ -754,15 +754,15 @@ class Experiment:
         # set first and last to 1
         self.V2[0, 0] = 1
         self.V2[self.n_scans - 1, self.n_scans - 1] = 1
-        self.V2 = np.matrix(self.V2)
+        self.V2 = np.asarray(self.V2)
 
         self.white = (
             self.V2
             - self.V2
-            * t(self.S)
-            * np.linalg.pinv(self.S * self.V2 * t(self.S))
-            * self.S
-            * self.V2
+            @ t(self.S)
+            @ np.linalg.pinv(self.S @ self.V2 @ t(self.S))
+            @ self.S
+            @ self.V2
         )
 
         return self
