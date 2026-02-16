@@ -41,5 +41,5 @@ The complete documentation for `neurodesign-plus` is hosted on [ReadTheDocs](htt
 This is a fork of the original **Neurodesign** package.
 
 - **Original Author:** [Neuropower Team](https://github.com/neuropower)
-- **Primary refactoring, extensions, and tutorials:** Atharv Umap (Social Learning and Decisions Lab, UMD)
-- **Supervision, design guidance, tutorials:** Valentin Guigon (Social Learning and Decisions Lab, UMD)
+- **Primary refactoring, extensions, and tutorials:** Atharv Amar Umap (Social Learning and Decisions Lab, UMD) — <aumap@terpmail.umd.edu>
+- **Supervision, design guidance, tutorials:** Valentin Guigon (Social Learning and Decisions Lab, UMD) — <vguigon@umd.edu>

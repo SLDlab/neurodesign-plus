@@ -5,8 +5,8 @@ requires = ["hatchling", "hatch-vcs"]
 [project]
 authors = [
     {name = "Joke Durnez"},
-    {name = "Atharv Umap"},
-    {name = "Valentin Guigon"}
+    {name = "Atharv Amar Umap", email = "aumap@terpmail.umd.edu"},
+    {name = "Valentin Guigon", email = "vguigon@umd.edu"}
 ]
 classifiers = [
     "Intended Audience :: Science/Research",
@@ -36,8 +36,8 @@ description = "Extended and maintained fork of the neurodesign package for fMRI 
 dynamic = ["version"]
 license = {text = "MIT"}
 maintainers = [
-    {name = "Atharv Umap"},
-    {name = "Valentin Guigon"}
+    {name = "Atharv Amar Umap", email = "aumap@terpmail.umd.edu"},
+    {name = "Valentin Guigon", email = "vguigon@umd.edu"}
 ]
 name = "neurodesign-plus"
 readme = "README.md"
