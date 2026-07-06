@@ -39,3 +39,48 @@ jobs:
             with:
                 flags: ${{ matrix.os }}_${{ matrix.py }}
             if: success()
+
+    notebooks:
+        name: Execute notebooks
+        runs-on: ubuntu-latest
+        steps:
+        -   name: Checkout
+            uses: actions/checkout@v5
+        -   name: Setup python
+            uses: actions/setup-python@v6
+            with:
+                python-version: '3.12'
+        -   name: Install tox
+            run: python -m pip install --upgrade tox
+        -   name: Execute tutorial notebooks
+            run: tox run -e test_notebooks
+
+    docs:
+        name: Build docs
+        runs-on: ubuntu-latest
+        steps:
+        -   name: Checkout
+            uses: actions/checkout@v5
+        -   name: Setup python
+            uses: actions/setup-python@v6
+            with:
+                python-version: '3.12'
+        -   name: Install tox
+            run: python -m pip install --upgrade tox
+        -   name: Build documentation
+            run: tox run -e docs
+
+    validation:
+        name: Aggregate validation
+        runs-on: ubuntu-latest
+        steps:
+        -   name: Checkout
+            uses: actions/checkout@v5
+        -   name: Setup python
+            uses: actions/setup-python@v6
+            with:
+                python-version: '3.12'
+        -   name: Install validation dependencies
+            run: python -m pip install ".[doc,test]"
+        -   name: Run aggregate validation
+            run: python -m validation.run_all

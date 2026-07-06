@@ -19,6 +19,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
+## [2.0.0] - 2026-07-05
+
+### Breaking changes
+
+- Replaced the inherited event-only timing surface with a trial-aware version-2 architecture based on conceptual trials and modeled events.
+- Replaced ambiguous ITI handling with separate `trial_start_interval`, `post_event_interval`, `event_transition_interval`, `inter_trial_interval`, `rest_every_n_trials`, and `rest_interval`.
+- Replaced event-level probability-template truncation with complete-template conceptual-trial sampling driven by `trial_templates`, `trial_template_probabilities`, and `n_conceptual_trials`.
+- Replaced direct manual `Design(order=..., ITI=...)` construction with `Experiment.create_design(...)` and `Experiment.create_manual_design(...)`.
+- Standardized the public optimization workflow around `optimise()` followed by `selected_design(0)`.
+
+### Added
+
+- Flat one-event shorthand through `order`.
+- Fixed complete conceptual-trial templates through `trial_templates` plus `trials`.
+- Probabilistic complete-template sampling through `trial_templates`, `trial_template_probabilities`, and `n_conceptual_trials`.
+- Shared timing-rule parsing for `event_durations`, `trial_start_interval`, `post_event_interval`, `event_transition_interval`, `inter_trial_interval`, and `rest_interval`.
+- Selector wrappers for trial-type, event-category, and event-transition timing rules.
+- Requested, normalized, and realized timing state exports.
+- Trial-aware schedule metadata on `Design`, including trial IDs, template IDs, trial types, and realized schedule arrays.
+- Public `selected_design(rank)` retrieval after optimization.
+- Canonical migration guide in `MIGRATION_2.0.md`.
+
+### Fixed
+
+- `Xnonconv` occupancy now reflects modeled event durations only rather than absorbing surrounding intervals.
+- Trial-start, post-event, within-trial transition, between-trial, and rest timing roles now remain structurally distinct.
+- Rest intervals now remain boundary intervals instead of being treated like synthetic task events.
+- `Ff` and `Fc` now use flattened realized event counts rather than conceptual-trial counts.
+- Case 10 now uses one canonical version-2 configuration shared across tutorials, validation, and manuscript-support generation.
+
+### Validation and reproducibility
+
+- Switched schedule sampling and optimization RNG handling to NumPy `SeedSequence` and `Generator`.
+- Added deterministic canonical Case 10 validation, manuscript-support generation, and cross-process determinism checks.
+- Added release-audit coverage for `selected_design()` guardrails, bounded distribution semantics, and version-2 public workflows.
+- Regenerated and validated the maintained tutorial notebooks from a single canonical notebook generator.
+
+### Migration requirements
+
+- Version 2.0 is intentionally source-breaking for scripts written against the version-1 timing API.
+- User-facing docs now route version migration through `MIGRATION_2.0.md`.
+- Tutorials and examples now teach the selected-design workflow, trial-aware timing terms, and event-count versus conceptual-trial-count distinctions.
+
+### Removed arguments
+
+- Removed `stimuli_durations`.
+- Removed `conditional_ITI`.
+- Removed `order_keys`, `order_probabilities`, and `order_length`.
+- Removed `all_stim_durations`.
+- Removed `t_pre` and `t_post`.
+- Removed `ITImodel`, `ITImin`, `ITImean`, and `ITImax`.
+- Removed active user-facing reliance on `.bestdesign` and internal design-pool indexing.
+
+### Export and report changes
+
+- Reports now align with the selected-design workflow.
+- `Design.export_payload()` now preserves reconstructable schedule arrays, schedule rows, counts, and metric components.
+- `Experiment.export_specification()` now preserves requested public timing specifications and trial-template configuration.
+
+### Trial-aware optimization changes
+
+- Flat mode remains event-order based.
+- Fixed conceptual-trial mode preserves the declared trial sequence.
+- Probabilistic template mode mutates and crosses at conceptual-trial boundaries instead of truncating event-level template fragments.
+
+### RNG changes
+
+- Removed dependence on global NumPy reseeding and Python `random`.
+- RNG derivation is now stable across sampling, crossover, mutation, and immigration.
+
+### Convergence changes
+
+- `convergence=k` now documents and exposes patience-based early stopping after `k` completed generations without strict improvement in the generation-best objective score.
+- `convergence=0` and `convergence=None` disable early stopping.
+- Public optimization state now exposes `generations_completed`, `stop_reason`, and `optima` for user-facing reporting.
+
 ## [1.0.2] - 2026-03-25
 
 ### Added

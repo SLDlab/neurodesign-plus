@@ -1,50 +1,17 @@
-# Installation & Setup
+# Installation And Setup
 
-This `neurodesign-plus` repository provides an extended and maintained fork of the `neurodesign` package.
-These instructions are for working with the source code locally (development or research use).
+`neurodesign-plus` is the install distribution.
+`neurodesign` is the Python import package.
 
----
+The project uses `pyproject.toml` as the maintained installation surface. These instructions use `.venv` consistently and avoid a stale `requirements.txt` workflow.
 
-## I. Clone the repository
+## Create And Activate A Virtual Environment
 
-Clone the `neurodesign-plus` repository and move into it:
-
-```bash
-git clone https://github.com/SLDlab/neurodesign-plus.git
-cd neurodesign-plus
-```
-
----
-
-## II. Create a virtual environment
-
-Create a Python virtual environment from the repository root:
-
-You can do this either through the VS Code interface or directly in the terminal.
-
-**A. Using VS Code GUI:**
-
-1. Open the Command Palette:
-   `View > Command Palette`
-2. Search for and select:
-   `Python: Select Interpreter`
-3. Click:
-   `+ Create Environment`
-4. Choose the environment type:
-   `venv`
-5. Select a Python interpreter (version `>= 3.9`, e.g., `Python 3.13.1`)
-
-**B. Using the Terminal:**
-
-From the root of the project folder, run:
+From the repository root:
 
 ```bash
-python -m venv venv
+python -m venv .venv
 ```
-
----
-
-## III. Activate the virtual environment
 
 macOS / Linux:
 
@@ -52,44 +19,86 @@ macOS / Linux:
 source .venv/bin/activate
 ```
 
-Windows (PowerShell):
+Windows PowerShell:
 
-```bash
-.venv\Scripts\Activate.ps1
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
----
+## End-User Installation From PyPI
 
-## IV. Install dependencies and the package (editable mode)
-
-With the virtual environment activated, install the dependencies:
+Install the published package and its runtime dependencies:
 
 ```bash
-pip install -r requirements.txt
-pip install .
+python -m pip install --upgrade pip
+python -m pip install neurodesign-plus
 ```
 
-To deactivate the environment when you're done:
+Use it as:
+
+```python
+from neurodesign import Experiment, Design, Optimisation
+```
+
+## Local Source Installation
+
+Install the current checkout as a standard local package:
 
 ```bash
-deactivate
+python -m pip install .
 ```
 
----
+This is the right choice when you want the local code without editable development tooling.
 
-## V. (Optional) Use the environment in Jupyter notebooks
+## Editable Development Installation
 
-If you're working in `.ipynb` notebooks, register the virtual environment as a Jupyter kernel:
+Install the editable package plus all declared development extras:
 
 ```bash
-python -m ipykernel install --user --name=venv --display-name "Python (neurodesign venv)"
+python -m pip install -e ".[dev]"
 ```
 
-Reload VSC. Then, in Jupyter, select the `"Python (neurodesign venv)"` kernel when working on notebooks.
+The `dev` extra includes the declared `doc` and `test` extras plus `pre-commit` and `tox`.
 
----
+## Test And Notebook Dependencies
 
-## Notes
+If you only need the package plus test and notebook execution dependencies:
 
-- This fork replaces the upstream `neurodesign` package.
-- Do not install the upstream repository separately.
+```bash
+python -m pip install -e ".[test]"
+```
+
+The `test` extra installs `pytest`, coverage tools, and notebook execution dependencies such as `nbclient`, `nbformat`, and `nbmake`.
+
+## Documentation Dependencies
+
+If you only need the package plus documentation build dependencies:
+
+```bash
+python -m pip install -e ".[doc]"
+```
+
+The `doc` extra installs the maintained Sphinx toolchain declared in `pyproject.toml`.
+
+## Report Dependencies
+
+No extra is currently required for report generation.
+The base runtime install already includes the report stack used by version 2.0: `matplotlib`, `reportlab`, and `pdfrw`.
+
+## Notebook Kernel Registration
+
+To expose the local environment as a Jupyter kernel:
+
+```bash
+python -m ipykernel install --user --name neurodesign-plus --display-name "Python (neurodesign-plus)"
+```
+
+## Verification
+
+Quick import check:
+
+```bash
+python -c "from neurodesign import Experiment, Design, Optimisation; print(Experiment.__module__)"
+```
+
+The import should resolve from `neurodesign`, not from a separate upstream package.

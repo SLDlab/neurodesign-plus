@@ -1,23 +1,13 @@
-FROM continuumio/miniconda
-MAINTAINER Joke Durnez <joke.durnez@gmail.com>
+FROM python:3.12-slim
 
-ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV MPLBACKEND=Agg
 
-RUN conda install numpy && \
-    conda install scipy && \
-    conda install pandas && \
-    conda install matplotlib
+WORKDIR /app
 
-RUN pip install neurodesign > 0.2.02
-RUN pip install sklearn
-RUN pip install pdfrw
-RUN pip install reportlab
-RUN pip install progressbar
-RUN pip install seaborn
+COPY . /app
 
-ENV LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+RUN pip install --no-cache-dir .
 
-# Clear apt cache to reduce image size
-RUN apt-get update && \
-    apt-get install -y libgl1-mesa-glx && \
-    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+CMD ["python", "-c", "from neurodesign import Experiment, Design, Optimisation; print('neurodesign-plus container ready')"]

@@ -1,6 +1,6 @@
 [build-system]
 build-backend = "hatchling.build"
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 
 [project]
 authors = [
@@ -26,14 +26,15 @@ classifiers = [
     "Topic :: Software Development"
 ]
 dependencies = [
+    "numpy",
+    "scipy",
     "scikit-learn>0.15.0",
     "rich",
     "reportlab",
     "pdfrw",
     "matplotlib"
 ]
-description = "Extended and maintained fork of the neurodesign package for fMRI experimental design optimisation"
-dynamic = ["version"]
+description = "Trial-aware neurodesign-plus 2.0 for fMRI experimental design optimisation"
 license = {text = "MIT"}
 maintainers = [
     {name = "Atharv Amar Umap", email = "aumap@terpmail.umd.edu"},
@@ -42,6 +43,7 @@ maintainers = [
 name = "neurodesign-plus"
 readme = "README.md"
 requires-python = ">=3.9"
+version = "2.0.0"
 
 [project.optional-dependencies]
 dev = [
@@ -58,6 +60,8 @@ doc = [
 ]
 test = [
     "coverage",
+    "nbclient",
+    "nbformat",
     "pytest>=6.0.0",
     "pytest-cov",
     "nbmake"
@@ -77,14 +81,25 @@ line-length = 90
 ignore-words = ".github/codespell_ignore_words.txt"
 skip = "*.ipynb"
 
-[tool.hatch.build.hooks.vcs]
-version-file = "neurodesign/_version.py"
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.agents",
+    "/.suplex",
+    "/.venv",
+    "/.pytest_cache",
+    "/docs/_build",
+    "/manuscript",
+    "/output",
+    "/tests",
+    "/tutorials",
+    "/validation",
+    "/AGENTS.md",
+    "/CLAUDE.md",
+    "/SUPLEX.md"
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["neurodesign"]
-
-[tool.hatch.version]
-source = "vcs"
 
 [tool.isort]
 combine_as_imports = true
@@ -97,4 +112,5 @@ addopts = "-ra --strict-config --strict-markers --doctest-modules --showlocals -
 doctest_optionflags = "NORMALIZE_WHITESPACE ELLIPSIS"
 junit_family = "xunit2"
 minversion = "6.0"
+norecursedirs = [".tmp_precommit", "validation/_artifacts"]
 xfail_strict = true

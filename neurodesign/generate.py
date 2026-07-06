@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+"""Legacy-style random order and ITI generators used by optimisation routines.
+
+These helpers are retained for flat one-event design generation. Version 2
+template-based designs build schedules in :mod:`neurodesign.classes`, but the
+genetic search still relies on these utilities when constructing flat orders or
+sampling classic ITI distributions.
+"""
+
 import numpy as np
 import scipy
 import scipy.stats as stats
@@ -12,54 +20,43 @@ def order(
     ntrials: int,
     probabilities: list[float],
     ordertype: str,
-    seed: int | None = 1234,
+    seed: int | None = None,
+    rng: np.random.Generator | None = None,
 ):
-    """Generate an order of stimuli.
+    """Sample a flat stimulus order for legacy one-event design modes.
 
-    :param nstim: The number of different stimuli (or conditions)
-    :type  nstim: integer
-
-    :param ntrials: The total number of trials
-    :type  ntrials: integer
-
-    :param probabilities: The probabilities of each stimulus
-    :type  probabilities: list
-
-    :param ordertype: Which model to sample from.
-                      Possibilities: "blocked", "random" or "msequence"
-    :type  ordertype: string
-
-    :param seed: The seed with which the change point will be sampled.
-    :type  seed: integer or None
-
-    :returns order: A list with the created order of stimuli
+    Parameters define the number of stimulus categories, desired sequence
+    length, target category probabilities, and the sampling strategy
+    (`random`, `blocked`, or `msequence`).
     """
     if ordertype not in ["random", "blocked", "msequence"]:
         raise ValueError(f"{ordertype} not known.")
 
-    np.random.seed(seed)
+    local_rng = rng if rng is not None else np.random.default_rng(seed)
 
     if ordertype == "blocked":
-        blocksize = float(np.random.choice(np.arange(1, 10), 1)[0])
+        blocksize = float(local_rng.choice(np.arange(1, 10)))
         nblocks = int(np.ceil(ntrials / blocksize))
-        blockorder = _generate_order_items(probabilities, nblocks)
-        order = np.repeat(blockorder, blocksize)[:ntrials]
+        blockorder = _generate_order_items(probabilities, nblocks, local_rng)
+        return np.repeat(blockorder, blocksize)[:ntrials].tolist()
 
-    elif ordertype == "msequence":
-        order = msequence.Msequence()
-        order.GenMseq(mLen=ntrials, stimtypeno=nstim, seed=seed)
-        id = np.random.randint(len(order.orders))
-        order = order.orders[id]
+    if ordertype == "msequence":
+        seq = msequence.Msequence()
+        seq.GenMseq(
+            mLen=ntrials,
+            stimtypeno=nstim,
+            seed=seed if seed is not None else int(local_rng.integers(1, 2**31)),
+        )
+        idx = int(local_rng.integers(len(seq.orders)))
+        return list(seq.orders[idx])
 
-    elif ordertype == "random":
-        order = _generate_order_items(probabilities, ntrials)
-    return order
+    return _generate_order_items(probabilities, ntrials, local_rng)
 
 
-def _generate_order_items(probabilities, items):
-    mult = np.random.multinomial(1, probabilities, items)
-    result = [x.tolist().index(1) for x in mult]
-    return result
+def _generate_order_items(probabilities, items, rng):
+    """Draw categorical item identities according to ``probabilities``."""
+    mult = rng.multinomial(1, probabilities, items)
+    return [x.tolist().index(1) for x in mult]
 
 
 def iti(
@@ -70,99 +67,70 @@ def iti(
     max: float | None = None,
     lam=None,
     resolution: float = 0.1,
-    seed: int | None = 1234,
+    seed: int | None = None,
+    rng: np.random.Generator | None = None,
 ):
-    """Generate an order of stimuli.
+    """Sample a legacy event-aligned ITI vector.
 
-    :param ntrials: The total number of trials
-    :type  ntrials: integer
-
-    :param model: Which model to sample from.
-                  Possibilities: "fixed","uniform","exponential"
-    :type  model: string
-
-    :param min: The minimum ITI (required with "uniform" or "exponential")
-    :type  min: float
-
-    :param mean: The mean ITI (required with "fixed" or "exponential")
-    :type  mean: float
-
-    :param max: The max ITI (required with "uniform" or "exponential")
-    :type  max: float
-
-    :param lam: lambda
-
-    :param resolution: The resolution of the design: for rounding the ITI's
-    :type  resolution: float
-
-    :param seed: The seed with which the change point will be sampled.
-    :type  seed: integer or None
-
-    :returns iti: A list with the created ITI's
+    The returned vector always has length ``ntrials`` and begins with ``0`` so
+    that element ``i`` can be interpreted as the gap immediately preceding the
+    ``i``-th event in the historical API.
     """
+    local_rng = rng if rng is not None else np.random.default_rng(seed)
+
     if model == "fixed":
         smp = [0] + [mean] * (ntrials - 1)
-        smp = resolution * np.round(smp / resolution)
+        smp = resolution * np.round(np.array(smp) / resolution)
+        return smp, lam
 
-    elif model == "uniform":
+    if model == "uniform":
         mean = (min + max) / 2.0
-        np.random.seed(seed)
-        smp = np.random.uniform(min, max, (ntrials - 1))
-        smp = _fix_iti(smp, mean, min, max, resolution)
-        smp = np.append([0], smp)
+        smp = local_rng.uniform(min, max, (ntrials - 1))
+        smp = _fix_iti(smp, mean, min, max, resolution, local_rng)
+        return np.append([0], smp), lam
 
-    elif model == "exponential":
+    if model == "exponential":
         if not lam:
-            try:
-                lam = _compute_lambda(min, max, mean)
-            except ValueError as err:
-                raise ValueError(err)
-        np.random.seed(seed)
-        smp = _rtexp((ntrials - 1), lam, min, max, seed=seed)
-        smp = _fix_iti(smp, mean, min, max, resolution)
-        smp = np.append([0], smp)
+            lam = _compute_lambda(min, max, mean)
+        smp = _rtexp((ntrials - 1), lam, min, max, local_rng)
+        smp = _fix_iti(smp, mean, min, max, resolution, local_rng)
+        return np.append([0], smp), lam
 
-    # round to resolution
-
-    return smp, lam
+        raise ValueError(f"Unknown inter-trial interval model {model!r}")
 
 
-def _fix_iti(smp, mean, min, max, resolution):
-    # kind of a weird function to fix ITI's to have the nominal mean
-    # problem was that you can't just add or subtract the difference: it could be
-    # out of bounds of the minimum and the maximum...
-    # now it changes values either to min/max or with the average difference
-    # compute diff
-    smp = resolution * np.round(smp / resolution)
+def _fix_iti(smp, mean, min, max, resolution, rng):
+    """Round sampled ITIs while nudging them back toward the requested mean."""
+    smp = resolution * np.round(np.array(smp) / resolution)
     totaldiff = np.sum(smp) - mean * len(smp)
     while not np.isclose(totaldiff, 0, resolution) and np.mean(smp) > mean:
-        chid = np.random.choice(len(smp))
+        chid = int(rng.integers(len(smp)))
         if (smp[chid] - min) < resolution or (max - smp[chid]) < resolution:
             continue
-        else:
-            smp[chid] = smp[chid] - np.sign(totaldiff) * resolution
+        smp[chid] = smp[chid] - np.sign(totaldiff) * resolution
         totaldiff = np.sum(smp) - mean * len(smp)
     return smp
 
 
 def _compute_lambda(lower, upper, mean):
+    """Infer the truncated-exponential scale parameter matching a bounded mean."""
     a = float(lower)
     b = float(upper)
     m = float(mean)
     opt = scipy.optimize.minimize(
         _difexp, 50, args=(a, b, m), bounds=((10 ** (-9), 100),), method="L-BFGS-B"
     )
-    check = _rtexp(100000, opt.x[0], lower, upper, seed=1000)
+    check_rng = np.random.default_rng(1000)
+    check = _rtexp(100000, opt.x[0], lower, upper, check_rng)
     if not np.isclose(np.mean(check), mean, rtol=0.1):
         raise ValueError(
-            "Error when figuring out lambda for exponential distribution: "
-            "can't compute lambda."
+            "Error when figuring out lambda for exponential distribution: can't compute lambda."
         )
-    else:
-        return opt.x[0]
+    return opt.x[0]
 
 
 def _difexp(lam, lower, upper, mean):
+    """Objective used when fitting a bounded exponential ITI distribution."""
     lam = float(np.asarray(lam).flat[0])
     diff = stats.truncexpon(
         (float(upper) - float(lower)) / lam, loc=float(lower), scale=lam
@@ -170,9 +138,10 @@ def _difexp(lam, lower, upper, mean):
     return abs(diff)
 
 
-def _rtexp(ntrials, lam, lower, upper, seed):
+def _rtexp(ntrials, lam, lower, upper, rng):
+    """Sample from a truncated exponential distribution on ``[lower, upper]``."""
     a = float(lower)
     b = float(upper)
-    np.random.seed(seed)
-    smp = stats.truncexpon((b - a) / lam, loc=a, scale=lam).rvs(ntrials)
-    return smp
+    return stats.truncexpon((b - a) / lam, loc=a, scale=lam).rvs(
+        ntrials, random_state=rng
+    )

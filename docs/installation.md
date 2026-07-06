@@ -1,65 +1,81 @@
 # Installation
 
-## From PyPI (recommended)
+`neurodesign-plus` is the install distribution.
+`neurodesign` is the import package.
+
+## End-User Installation From PyPI
 
 ```bash
-pip install neurodesign-plus
+python -m pip install --upgrade pip
+python -m pip install neurodesign-plus
 ```
 
-This installs the package and all required dependencies. You can then use it as:
+Use it as:
 
 ```python
 from neurodesign import Experiment, Design, Optimisation
 ```
 
-:::{note}
-The PyPI package is called `neurodesign-plus`, but the Python import remains `neurodesign`.
-This fork replaces the upstream `neurodesign` package -- do **not** install both.
-:::
+The base install already includes report-generation dependencies.
+No separate report extra exists in `pyproject.toml`.
 
-## From Source (development)
+## Local Source Installation
 
-For development or to access the latest unreleased changes:
-
-### 1. Clone the repository
+Clone the repository and create a virtual environment:
 
 ```bash
 git clone https://github.com/SLDlab/neurodesign-plus.git
 cd neurodesign-plus
-```
-
-### 2. Create a virtual environment
-
-```bash
 python -m venv .venv
 ```
 
-### 3. Activate the virtual environment
+Activate the environment:
 
-**macOS / Linux:**
+macOS / Linux:
 
 ```bash
 source .venv/bin/activate
 ```
 
-**Windows (PowerShell):**
+Windows PowerShell:
 
 ```powershell
-.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 ```
 
-### 4. Install in editable mode
+Install the local checkout:
 
 ```bash
-pip install -e ".[dev]"
+python -m pip install .
 ```
 
-This installs the package in editable mode along with all development dependencies (testing, linting, documentation).
+## Editable Development Installation
 
-### 5. (Optional) Jupyter kernel
-
-If you are working with the tutorial notebooks, register the environment as a Jupyter kernel:
+Install the editable package plus the declared development extras:
 
 ```bash
-python -m ipykernel install --user --name=neurodesign-plus --display-name "Python (neurodesign-plus)"
+python -m pip install -e ".[dev]"
 ```
+
+The `dev` extra includes the maintained `doc` and `test` extras plus `pre-commit` and `tox`.
+
+## Test And Notebook Dependencies
+
+Install the package plus the declared testing and notebook execution dependencies:
+
+```bash
+python -m pip install -e ".[test]"
+```
+
+## Documentation Dependencies
+
+Install the package plus the maintained Sphinx toolchain:
+
+```bash
+python -m pip install -e ".[doc]"
+```
+
+## Version-2 Migration
+
+Version 2.0 is a clean breaking API release.
+Use the [migration guide](migration.md) for version-1 name mapping and workflow changes instead of trying to preserve removed timing aliases in-place.

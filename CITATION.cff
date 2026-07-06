@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "neurodesign-plus"
+type: software
+authors:
+  - family-names: "Umap"
+    given-names: "Atharv Amar"
+  - family-names: "Charpentier"
+    given-names: "Caroline J."
+  - family-names: "Guigon"
+    given-names: "Valentin"
+version: "1.0.4"
+repository-code: "https://github.com/SLDlab/neurodesign-plus"
+url: "https://github.com/SLDlab/neurodesign-plus"
+license: "MIT"
+preferred-citation:
+  type: software
+  title: "neurodesign-plus"
+  authors:
+    - family-names: "Umap"
+      given-names: "Atharv Amar"
+    - family-names: "Charpentier"
+      given-names: "Caroline J."
+    - family-names: "Guigon"
+      given-names: "Valentin"
+  version: "1.0.4"
+  repository-code: "https://github.com/SLDlab/neurodesign-plus"
+  url: "https://github.com/SLDlab/neurodesign-plus"
+  license: "MIT"

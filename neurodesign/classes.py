@@ -1,21 +1,35 @@
 from __future__ import annotations
 
+"""Core schedule, metric, and optimisation classes for Neurodesign-Plus.
+
+The version-2 architecture separates conceptual trials from flattened modeled
+events. Conceptual trials define how schedules are sampled and where
+between-trial intervals or rests may occur; flattened modeled events define the
+regressor axis used for event timing, frequency metrics, and transition metrics.
+"""
+
 import copy
+import functools
+import hashlib
+import json
 import math
-import random
 import shutil
 import warnings
 import zipfile
 from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import scipy
 import scipy.linalg
+import scipy.optimize
+import scipy.stats as stats
 import sklearn.cluster
 from numpy import transpose as t
-from rich import print
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -28,11 +42,22 @@ from rich.progress import (
 )
 from scipy.special import gamma
 
-from neurodesign import generate, report
+from . import generate, report
+
+REMOVED_TIMING_ARGUMENTS = {
+    "t_pre": "trial_start_interval",
+    "t_post": "post_event_interval",
+    "stimuli_durations": "event_durations",
+    "conditional_ITI": "event_transition_interval and/or inter_trial_interval",
+    "ITImodel": "inter_trial_interval",
+    "ITImin": "inter_trial_interval",
+    "ITImean": "inter_trial_interval",
+    "ITImax": "inter_trial_interval",
+}
 
 
 def progress_bar(text: str, color: str = "green") -> Progress:
-    """Return a rich progress bar instance."""
+    """Create a consistent Rich progress bar used by optimisation loops."""
     return Progress(
         TextColumn(f"[{color}]{text}"),
         SpinnerColumn("dots"),
@@ -44,305 +69,615 @@ def progress_bar(text: str, color: str = "green") -> Progress:
     )
 
 
+def _json_key(value: Any) -> str:
+    """Convert nested rule keys into stable JSON-serializable strings."""
+    if isinstance(value, tuple):
+        return json.dumps([_json_key(v) for v in value])
+    return str(value)
+
+
+def _display_rule(value: Any) -> Any:
+    """Recursively normalize internal rule objects for human-readable export."""
+    if isinstance(value, dict):
+        return {str(k): _display_rule(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_display_rule(v) for v in value]
+    if isinstance(value, tuple):
+        return [_display_rule(v) for v in value]
+    return value
+
+
+def _json_default(value: Any) -> Any:
+    """Convert numpy/scalar objects into stable JSON-serializable values."""
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (np.integer, np.floating)):
+        return value.item()
+    raise TypeError(f"Object of type {type(value)!r} is not JSON serializable")
+
+
+def _stable_json_bytes(value: Any) -> bytes:
+    """Serialize nested design/specification payloads with deterministic ordering."""
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=_json_default,
+    ).encode("utf-8")
+
+
+def _find_new_resolution(TR, res):
+    """Snap a requested resolution to a divisor of the repetition time."""
+    n = TR * 1000.0
+    divisors = []
+    for i in range(1, int(math.sqrt(n) + 1)):
+        if n % i == 0:
+            divisors.append(i)
+            if i * i != n:
+                divisors.append(int(n / i))
+    sorted_divisors = np.sort(divisors)
+    resdivisor = TR / float(res)
+    difs = np.abs(resdivisor - sorted_divisors)
+    minind = np.where(difs == np.min(difs))[0]
+    divisor = sorted_divisors[minind][0]
+    return TR / divisor
+
+
+def _round_to_resolution(inmat, res):
+    """Round values down to the discrete modeling grid."""
+    out = res * np.floor(np.array(inmat) / res)
+    ind = out / res
+    return out, [int(x) for x in ind]
+
+
+def _round_scalar(value: float, res: float) -> float:
+    """Round a scalar to the nearest modeling-grid step."""
+    return float(res * np.round(float(value) / res))
+
+
+def _ensure_non_negative(arg_name: str, value: float) -> float:
+    """Validate that a timing parameter is finite and non-negative."""
+    if not np.isfinite(value) or value < 0:
+        raise ValueError(f"{arg_name} must be finite and non-negative; got {value!r}")
+    return float(value)
+
+
+def _rule_id(prefix: str, selector_value: Any | None = None) -> str:
+    """Build a readable provenance label for a resolved timing rule."""
+    if selector_value is None:
+        return prefix
+    if isinstance(selector_value, tuple):
+        selector_value = "->".join(str(v) for v in selector_value)
+    return f"{prefix}[{selector_value}]"
+
+
+@dataclass(frozen=True)
+class NormalizedRule:
+    """Canonical internal representation of one resolved timing distribution."""
+
+    model: str
+    mean: float | None = None
+    min: float | None = None
+    max: float | None = None
+    std: float | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly representation of the normalized rule."""
+        out = {"model": self.model}
+        if self.mean is not None:
+            out["mean"] = self.mean
+        if self.min is not None:
+            out["min"] = self.min
+        if self.max is not None:
+            out["max"] = self.max
+        if self.std is not None:
+            out["std"] = self.std
+        return out
+
+
+@dataclass(frozen=True)
+class SelectorSpec:
+    """Canonical representation of selector-dispatched timing rules."""
+
+    selector_kind: str
+    rules: dict[Any, NormalizedRule]
+    default: NormalizedRule | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly representation of the selector wrapper."""
+        out = {}
+        body = {str(k): v.as_dict() for k, v in self.rules.items()}
+        if self.default is not None:
+            body["default"] = self.default.as_dict()
+        out[self.selector_kind] = body
+        return out
+
+
+def _validate_fixed_rule(arg_name: str, mean: Any) -> NormalizedRule:
+    """Normalize a scalar timing specification into a fixed rule."""
+    return NormalizedRule(model="fixed", mean=_ensure_non_negative(arg_name, mean))
+
+
+@functools.cache
+def _compute_truncated_exponential_scale(
+    arg_name: str, mean: float, lower: float, upper: float
+) -> float:
+    """Infer the scale of a bounded exponential distribution with a target mean."""
+    if mean < lower or mean > upper:
+        raise ValueError(
+            f"{arg_name} exponential rule has mean={mean} outside bounds [{lower}, {upper}]"
+        )
+
+    def objective(scale):
+        scale = float(np.asarray(scale).flat[0])
+        if scale <= 0:
+            return 1e9
+        dist = stats.truncexpon((upper - lower) / scale, loc=lower, scale=scale)
+        return abs(dist.mean() - mean)
+
+    result = scipy.optimize.minimize(
+        objective,
+        x0=np.array([max(mean - lower, 1e-6)]),
+        bounds=((1e-9, 1e6),),
+        method="L-BFGS-B",
+    )
+    scale = float(result.x[0])
+    dist = stats.truncexpon((upper - lower) / scale, loc=lower, scale=scale)
+    if not np.isclose(dist.mean(), mean, atol=1e-6, rtol=1e-6):
+        raise ValueError(
+            f"{arg_name} exponential rule has impossible bounded mean semantics"
+        )
+    return scale
+
+
+@functools.cache
+def _compute_truncated_normal_loc(
+    arg_name: str, mean: float, std: float, lower: float, upper: float
+) -> float:
+    """Infer the latent Gaussian location for a bounded normal rule."""
+    if mean < lower or mean > upper:
+        raise ValueError(
+            f"{arg_name} gaussian rule has mean={mean} outside bounds [{lower}, {upper}]"
+        )
+
+    def objective(loc):
+        loc = float(np.asarray(loc).flat[0])
+        a = (lower - loc) / std
+        b = (upper - loc) / std
+        return stats.truncnorm.mean(a, b, loc=loc, scale=std) - mean
+
+    result = scipy.optimize.root_scalar(
+        objective,
+        bracket=(lower - 10 * std, upper + 10 * std),
+        method="brentq",
+    )
+    if not result.converged:
+        raise ValueError(
+            f"{arg_name} gaussian rule has impossible bounded mean semantics"
+        )
+    return float(result.root)
+
+
+def normalize_rule(spec: Any, arg_name: str) -> NormalizedRule | SelectorSpec:
+    """Normalize user timing syntax into internal rule objects.
+
+    The public API accepts scalars, explicit ``{'model': ...}`` dictionaries,
+    and selector wrappers such as ``by_event_category`` or
+    ``by_event_transition``. This function converts those variants into a
+    canonical representation used by schedule generation.
+    """
+    if isinstance(spec, (int, float, np.integer, np.floating)):
+        return _validate_fixed_rule(arg_name, float(spec))
+
+    if not isinstance(spec, dict):
+        raise TypeError(
+            f"{arg_name} must be a scalar or dictionary rule; got {type(spec)!r}"
+        )
+
+    selector_keys = [k for k in spec.keys() if k.startswith("by_")]
+    if "model" in spec and selector_keys:
+        raise ValueError(f"{arg_name} mixes a global rule with selector wrapper syntax")
+    if len(selector_keys) > 1:
+        raise ValueError(f"{arg_name} may contain only one selector wrapper")
+
+    if selector_keys:
+        selector_kind = selector_keys[0]
+        body = spec[selector_kind]
+        if not isinstance(body, dict):
+            raise TypeError(f"{arg_name}.{selector_kind} must be a dictionary")
+        rules: dict[Any, NormalizedRule] = {}
+        default = None
+        for key, value in body.items():
+            if key == "default":
+                default = normalize_rule(value, f"{arg_name}.{selector_kind}.default")
+                if isinstance(default, SelectorSpec):
+                    raise ValueError(
+                        f"{arg_name}.{selector_kind}.default may not nest selectors"
+                    )
+                continue
+            normalized = normalize_rule(value, f"{arg_name}.{selector_kind}[{key!r}]")
+            if isinstance(normalized, SelectorSpec):
+                raise ValueError(
+                    f"{arg_name}.{selector_kind}[{key!r}] may not nest selectors"
+                )
+            if selector_kind == "by_event_transition":
+                if not isinstance(key, tuple) or len(key) != 2:
+                    raise ValueError(
+                        f"{arg_name}.{selector_kind} keys must be ordered pairs; got {key!r}"
+                    )
+            rules[key] = normalized
+        return SelectorSpec(selector_kind=selector_kind, rules=rules, default=default)
+
+    model = spec.get("model")
+    if model is None:
+        raise ValueError(
+            f"{arg_name} dictionary is ambiguous; use a scalar, a {{'model': ...}} rule, or a selector wrapper"
+        )
+    if model == "fixed":
+        if "mean" not in spec:
+            raise ValueError(f"{arg_name} fixed rule requires 'mean'")
+        return _validate_fixed_rule(arg_name, spec["mean"])
+    if model == "uniform":
+        if "min" not in spec or "max" not in spec:
+            raise ValueError(f"{arg_name} uniform rule requires 'min' and 'max'")
+        lower = _ensure_non_negative(f"{arg_name}.min", spec["min"])
+        upper = _ensure_non_negative(f"{arg_name}.max", spec["max"])
+        if lower > upper:
+            raise ValueError(f"{arg_name} uniform rule requires min <= max")
+        if "mean" in spec:
+            expected = (lower + upper) / 2.0
+            if not np.isclose(expected, float(spec["mean"]), atol=1e-8, rtol=1e-8):
+                raise ValueError(
+                    f"{arg_name} uniform rule mean must equal (min + max) / 2; expected {expected}"
+                )
+        return NormalizedRule(
+            model="uniform", mean=(lower + upper) / 2.0, min=lower, max=upper
+        )
+    if model == "exponential":
+        if "mean" not in spec:
+            raise ValueError(f"{arg_name} exponential rule requires 'mean'")
+        mean = _ensure_non_negative(f"{arg_name}.mean", spec["mean"])
+        lower = spec.get("min")
+        upper = spec.get("max")
+        lower_f = (
+            _ensure_non_negative(f"{arg_name}.min", lower) if lower is not None else None
+        )
+        upper_f = (
+            _ensure_non_negative(f"{arg_name}.max", upper) if upper is not None else None
+        )
+        if lower_f is not None and upper_f is not None and lower_f > upper_f:
+            raise ValueError(f"{arg_name} exponential rule requires min <= max")
+        if lower_f is not None and mean < lower_f:
+            raise ValueError(
+                f"{arg_name} exponential rule has mean={mean} outside bounds [{lower_f}, {upper_f}]"
+            )
+        if upper_f is not None and mean > upper_f:
+            raise ValueError(
+                f"{arg_name} exponential rule has mean={mean} outside bounds [{lower_f}, {upper_f}]"
+            )
+        return NormalizedRule(model="exponential", mean=mean, min=lower_f, max=upper_f)
+    if model == "gaussian":
+        if "mean" not in spec or "std" not in spec:
+            raise ValueError(f"{arg_name} gaussian rule requires 'mean' and 'std'")
+        mean = _ensure_non_negative(f"{arg_name}.mean", spec["mean"])
+        std = float(spec["std"])
+        if not np.isfinite(std) or std <= 0:
+            raise ValueError(f"{arg_name}.std must be finite and > 0")
+        lower = spec.get("min")
+        upper = spec.get("max")
+        if lower is None:
+            raise ValueError(
+                f"{arg_name} gaussian rules must define a non-negative 'min' bound"
+            )
+        lower_f = _ensure_non_negative(f"{arg_name}.min", lower)
+        upper_f = (
+            _ensure_non_negative(f"{arg_name}.max", upper) if upper is not None else None
+        )
+        if upper_f is not None and lower_f > upper_f:
+            raise ValueError(f"{arg_name} gaussian rule requires min <= max")
+        if mean < lower_f or (upper_f is not None and mean > upper_f):
+            raise ValueError(
+                f"{arg_name} gaussian rule has mean={mean} outside bounds [{lower_f}, {upper_f}]"
+            )
+        return NormalizedRule(
+            model="gaussian", mean=mean, min=lower_f, max=upper_f, std=std
+        )
+    raise ValueError(f"{arg_name} uses unknown model {model!r}")
+
+
+def sample_normalized_rule(
+    rule: NormalizedRule, arg_name: str, rng: np.random.Generator, resolution: float
+) -> float:
+    """Sample one realized timing value from a normalized rule."""
+    if rule.model == "fixed":
+        value = float(rule.mean)
+    elif rule.model == "uniform":
+        value = float(rng.uniform(rule.min, rule.max))
+    elif rule.model == "exponential":
+        if rule.min is None and rule.max is None:
+            value = float(rng.exponential(rule.mean))
+        else:
+            lower = 0.0 if rule.min is None else float(rule.min)
+            upper = lower + 1e6 if rule.max is None else float(rule.max)
+            scale = _compute_truncated_exponential_scale(
+                arg_name, float(rule.mean), lower, upper
+            )
+            dist = stats.truncexpon((upper - lower) / scale, loc=lower, scale=scale)
+            value = float(dist.rvs(random_state=rng))
+    elif rule.model == "gaussian":
+        lower = float(rule.min)
+        upper = lower + 10 * float(rule.std) if rule.max is None else float(rule.max)
+        loc = _compute_truncated_normal_loc(
+            arg_name, float(rule.mean), float(rule.std), lower, upper
+        )
+        a = (lower - loc) / float(rule.std)
+        b = (upper - loc) / float(rule.std)
+        value = float(
+            stats.truncnorm.rvs(a, b, loc=loc, scale=float(rule.std), random_state=rng)
+        )
+    else:
+        raise ValueError(f"Unknown normalized rule model {rule.model!r}")
+    return _round_scalar(_ensure_non_negative(arg_name, value), resolution)
+
+
 class Design:
-    """
-    This class represents an experimental design for an fMRI experiment.
+    """Represent one realized fMRI design with explicit event-level timing.
 
-    :param order: The stimulus order.
-    :type order: list of integers
-    :param ITI: The ITI's between all stimuli.
-    :type ITI: list of floats
-    :param experiment: The experimental setup.
-    :type experiment: experiment object
-    :param onsets: The onsets of all stimuli.
-    :type onsets: list of floats
+    The design stores the flattened modeled-event order, the realized schedule
+    arrays derived from an :class:`Experiment`, and the computed efficiency
+    metrics used for reporting and optimisation.
     """
 
-    def __init__(self, order, ITI, experiment, onsets=None, all_stim_durations=None):
+    def __init__(
+        self,
+        experiment: Experiment | None = None,  # type: ignore[name-defined]
+        schedule: dict[str, Any] | None = None,
+        trial_sequence: list[Any] | None = None,
+        template_sequence: list[str] | None = None,
+    ):
+        """Create a realized design from a fully materialized schedule.
 
-        self.order = order
-        self.ITI = ITI
-        self.onsets = onsets
-        self.Fe = 0
-        self.Fd = 0
-
-        # Per-design variable stimulus durations (None = use experiment.stim_duration)
-        self.all_stim_durations = all_stim_durations
-
+        Parameters
+        ----------
+        experiment:
+            Parent experiment specification that defines the modeling and
+            optimisation context.
+        schedule:
+            Realized event-level schedule generated by the experiment.
+        trial_sequence, template_sequence:
+            Provenance for conceptual-trial sampling, used by resampling,
+            crossover, mutation, and validation exports.
+        """
         self.experiment = experiment
+        self.Fe = 0.0
+        self.Fd = 0.0
+        self.Ff = 0.0
+        self.Fc = 0.0
+        self.F = 0.0
+        self.schedule = None
+        self.order = None
+        self.trial_sequence = trial_sequence
+        self.template_sequence = template_sequence
 
-        # assert whether design is valid
-        if len(self.ITI) != experiment.n_trials:
-            raise ValueError("length of design (ITI's) does not comply with experiment")
-        if len(self.order) != experiment.n_trials:
-            raise ValueError("length of design (orders) does not comply with experiment")
+        if self.experiment is None:
+            raise ValueError("Design requires an Experiment")
+
+        if schedule is not None:
+            self._apply_schedule(schedule)
+        else:
+            raise ValueError(
+                "Design construction requires a realized schedule. "
+                "Use Experiment.create_design() or Experiment.create_manual_design(...) in version 2.0."
+            )
+
+    def _apply_schedule(self, schedule: dict[str, Any]):
+        """Hydrate convenience arrays from the realized schedule dictionary."""
+        self.schedule = copy.deepcopy(schedule)
+        self.order = list(schedule["order"])
+        self.n_events = len(self.order)
+        self.event_categories = list(schedule["event_categories"])
+        self.realized_event_durations = np.array(
+            schedule["realized_event_durations"], dtype=float
+        )
+        self.trial_ids = np.array(schedule["trial_ids"], dtype=int)
+        self.event_index_within_trial = np.array(
+            schedule["event_index_within_trial"], dtype=int
+        )
+        self.trial_template_ids = list(schedule["trial_template_ids"])
+        self.trial_type_ids = list(schedule["trial_type_ids"])
+        self.realized_trial_start_intervals = np.array(
+            schedule["realized_trial_start_intervals"], dtype=float
+        )
+        self.realized_post_event_intervals = np.array(
+            schedule["realized_post_event_intervals"], dtype=float
+        )
+        self.realized_event_transition_intervals = np.array(
+            schedule["realized_event_transition_intervals"], dtype=float
+        )
+        self.realized_inter_trial_intervals = np.array(
+            schedule["realized_inter_trial_intervals"], dtype=float
+        )
+        self.realized_rest_intervals = np.array(
+            schedule["realized_rest_intervals"], dtype=float
+        )
+        self.event_onsets = np.array(schedule["event_onsets"], dtype=float)
+        self.event_offsets = np.array(schedule["event_offsets"], dtype=float)
+        self.trial_starts = np.array(schedule["trial_starts"], dtype=float)
+        self.trial_ends = np.array(schedule["trial_ends"], dtype=float)
+        self.trial_start_event_index = np.array(
+            schedule["trial_start_event_index"], dtype=int
+        )
+        self.trial_end_event_index = np.array(
+            schedule["trial_end_event_index"], dtype=int
+        )
+        self.within_trial_transition_from_event_index = np.array(
+            schedule["within_trial_transition_from_event_index"], dtype=int
+        )
+        self.within_trial_transition_to_event_index = np.array(
+            schedule["within_trial_transition_to_event_index"], dtype=int
+        )
+        self.inter_trial_boundary_after_trial = np.array(
+            schedule["inter_trial_boundary_after_trial"], dtype=int
+        )
+        self.selector_provenance = copy.deepcopy(schedule["selector_provenance"])
+        self.schedule_table = copy.deepcopy(schedule["schedule_table"])
 
     def check_maxrep(self, maxrep):
-        """Check whether design does not exceed maximum repeats within design.
-
-        :param maxrep: How many times should a stimulus maximally be repeated.
-        :type maxrep: integer
-        :returns repcheck: Boolean indicating maximum repeats are respected
-        """
+        """Return ``False`` if any flattened event category repeats too often."""
         for stim in range(self.experiment.n_stimuli):
             repcheck = "".join(str(e) for e in [stim] * maxrep) not in "".join(
                 str(e) for e in self.order
             )
             if not repcheck:
-                break
-
-        return repcheck
+                return False
+        return True
 
     def check_hardprob(self):
-        """Check whether frequencies match the prespecified frequencies.
-
-        :returns probcheck: Boolean indicating probabilities are respected
-        """
-        obscnt = Counter(self.order).values()
-        obsprob = np.round(obscnt / np.sum(obscnt), decimals=2)
-        if len(self.experiment.P) != len(obsprob):
+        """Check whether the realized flattened event proportions match ``P``."""
+        if (
+            len(self.experiment.P) != self.experiment.n_stimuli
+            or len(self.experiment.P) == 0
+        ):
             return False
+        counts = np.zeros(self.experiment.n_stimuli, dtype=float)
+        for code in self.order:
+            if not isinstance(code, (int, np.integer)):
+                return False
+            code = int(code)
+            if code < 0 or code >= self.experiment.n_stimuli:
+                return False
+            counts[code] += 1.0
+        total = counts.sum()
+        if total <= 0:
+            return False
+        obsprob = counts / total
+        close = np.isclose(
+            np.array(self.experiment.P, dtype=float), obsprob, atol=0.001, rtol=0.0
+        )
+        return bool(np.all(close))
 
-        close = np.isclose(np.array(self.experiment.P), np.array(obsprob), atol=0.001)
-        return np.sum(close) == len(obsprob)
+    def spawn_resampled_timing(self, rng: np.random.Generator) -> Design:
+        """Resample timing while preserving the same conceptual-trial structure."""
+        schedule = self.experiment.realize_from_trial_sequence(
+            trial_sequence=self.trial_sequence,
+            rng=rng,
+            template_sequence=self.template_sequence,
+        )
+        return Design(experiment=self.experiment, schedule=schedule)
 
     def crossover(self, other, seed=1234):
-        """Crossover design with other design and create offspring.
+        """Create offspring designs by recombining order or template sequences."""
+        rng = np.random.default_rng(seed)
+        if self.experiment.mode in {"flat_fixed_order", "fixed_trials"}:
+            return [self.spawn_resampled_timing(rng), other.spawn_resampled_timing(rng)]
 
-        :param other: The design with which the design will be mixed
-        :type other: design object
-        :param seed: The seed with which the change point will be sampled.
-        :type seed: integer or None
-        :returns offspring: List of two offspring designs.
-        """
-        # check whether designs are compatible
-        assert len(self.order) == len(other.order)
-
-        np.random.seed(seed)
-        changepoint = np.random.choice(len(self.order), 1)[0]
-
-        offspringorder1 = None
-        offspringorder2 = None
-
-        # Making sure the order doesn't change for the crossover
-        if self.experiment.order_fixed:
-            offspringorder1 = self.order
-            offspringorder2 = other.order
-        elif self.experiment.order_probabilities is not None:
-            offspringorder1 = Experiment.sample_from_probabilities(
-                self.experiment.order_probabilities,
-                self.experiment.order_keys,
-                self.experiment.order_length,
+        if self.experiment.mode == "template_sampled":
+            assert self.trial_sequence is not None and other.trial_sequence is not None
+            changepoint = int(rng.integers(0, len(self.trial_sequence)))
+            seq1 = list(self.trial_sequence[:changepoint]) + list(
+                other.trial_sequence[changepoint:]
             )
-            offspringorder2 = Experiment.sample_from_probabilities(
-                self.experiment.order_probabilities,
-                self.experiment.order_keys,
-                self.experiment.order_length,
+            seq2 = list(other.trial_sequence[:changepoint]) + list(
+                self.trial_sequence[changepoint:]
             )
-        else:
-            offspringorder1 = (
-                list(self.order)[:changepoint] + list(other.order)[changepoint:]
-            )
-            offspringorder2 = (
-                list(other.order)[:changepoint] + list(self.order)[changepoint:]
-            )
+            child1 = self.experiment.realize_from_trial_sequence(seq1, rng, seq1)
+            child2 = self.experiment.realize_from_trial_sequence(seq2, rng, seq2)
+            return [
+                Design(
+                    experiment=self.experiment,
+                    schedule=child1,
+                    trial_sequence=seq1,
+                    template_sequence=seq1,
+                ),
+                Design(
+                    experiment=self.experiment,
+                    schedule=child2,
+                    trial_sequence=seq2,
+                    template_sequence=seq2,
+                ),
+            ]
 
-        # Re-sample stim durations for new orders if variable durations are used
-        asd1 = self.all_stim_durations  # default: inherit from parent
-        asd2 = other.all_stim_durations
-        if (
-            self.experiment.stimuli_durations is not None
-            and not self.experiment.order_fixed
-        ):
-            # Order changed, so re-sample durations to match new order
-            asd1 = Experiment.sample_stim_durations(
-                offspringorder1,
-                self.experiment.stimuli_durations,
-                self.experiment.t_pre,
-                self.experiment.t_post,
-            )
-            asd2 = Experiment.sample_stim_durations(
-                offspringorder2,
-                self.experiment.stimuli_durations,
-                self.experiment.t_pre,
-                self.experiment.t_post,
-            )
-
-        offspring1 = Design(
-            order=offspringorder1,
-            ITI=self.ITI,
-            experiment=self.experiment,
-            all_stim_durations=asd1,
-        )
-        offspring2 = Design(
-            order=offspringorder2,
-            ITI=other.ITI,
-            experiment=self.experiment,
-            all_stim_durations=asd2,
-        )
-
-        return [offspring1, offspring2]
+        changepoint = int(rng.integers(0, len(self.order)))
+        offspringorder1 = list(self.order)[:changepoint] + list(other.order)[changepoint:]
+        offspringorder2 = list(other.order)[:changepoint] + list(self.order)[changepoint:]
+        child1 = self.experiment.realize_flat_order(offspringorder1, rng)
+        child2 = self.experiment.realize_flat_order(offspringorder2, rng)
+        return [
+            Design(
+                experiment=self.experiment,
+                schedule=child1,
+                trial_sequence=offspringorder1,
+            ),
+            Design(
+                experiment=self.experiment,
+                schedule=child2,
+                trial_sequence=offspringorder2,
+            ),
+        ]
 
     def mutation(self, q, seed=1234):
-        """Mutate q% of the stimuli with another stimulus.
+        """Randomly perturb a design while respecting the active design mode."""
+        rng = np.random.default_rng(seed)
+        if self.experiment.mode in {"flat_fixed_order", "fixed_trials"}:
+            return self.spawn_resampled_timing(rng)
 
-        :param q: The percentage of stimuli that should be mutated
-        :type q: float
-        :param seed: The seed with which the mutation points are sampled.
-        :type seed: integer or None
-        :returns mutated: Mutated design
-        """
-        np.random.seed(seed)
-        mut_ind = np.random.choice(
-            len(self.order), int(len(self.order) * q), replace=False
-        )
-        mutated = copy.copy(self.order)
-
-        if (
-            not self.experiment.order_fixed
-            and self.experiment.order_probabilities is None
-        ):
-            for mut in mut_ind:
-                np.random.seed(seed)
-                mut_stim = np.random.choice(self.experiment.n_stimuli, 1, replace=True)[0]
-                mutated[mut] = mut_stim
-
-        # Re-sample stim durations if order changed and variable durations are used
-        asd = self.all_stim_durations
-        if (
-            self.experiment.stimuli_durations is not None
-            and not self.experiment.order_fixed
-        ):
-            asd = Experiment.sample_stim_durations(
-                mutated,
-                self.experiment.stimuli_durations,
-                self.experiment.t_pre,
-                self.experiment.t_post,
+        if self.experiment.mode == "template_sampled":
+            seq = list(self.trial_sequence)
+            nmut = max(1, int(len(seq) * q)) if len(seq) > 0 else 0
+            if nmut > 0:
+                idxs = rng.choice(len(seq), size=nmut, replace=False)
+                for idx in np.atleast_1d(idxs):
+                    seq[int(idx)] = self.experiment.sample_template_id(rng)
+            schedule = self.experiment.realize_from_trial_sequence(seq, rng, seq)
+            return Design(
+                experiment=self.experiment,
+                schedule=schedule,
+                trial_sequence=seq,
+                template_sequence=seq,
             )
 
-        offspring = Design(
-            order=mutated,
-            ITI=self.ITI,
-            experiment=self.experiment,
-            all_stim_durations=asd,
+        mutated = list(self.order)
+        nmut = max(1, int(len(mutated) * q)) if len(mutated) > 0 else 0
+        if nmut > 0:
+            idxs = rng.choice(len(mutated), size=nmut, replace=False)
+            for idx in np.atleast_1d(idxs):
+                mutated[int(idx)] = int(rng.integers(self.experiment.n_stimuli))
+        schedule = self.experiment.realize_flat_order(mutated, rng)
+        return Design(
+            experiment=self.experiment, schedule=schedule, trial_sequence=mutated
         )
-
-        return offspring
 
     def designmatrix(self):
-        """Expand from order of stimuli to a fMRI timeseries.
+        """Build event-level and convolved design matrices for this schedule.
 
-        Returns self on success, or False if the design's actual timing
-        exceeds the experiment's container (e.g. from extreme ITI draws).
+        ``Xnonconv`` represents the realized modeled-event occupancy on the scan
+        grid. ``Xconv`` is the HRF-convolved event-regressor matrix used by the
+        estimation efficiency metrics.
         """
-        # ITIs to onsets
-        orderli = list(self.order)
-        ITIli = list(self.ITI)
-        if self.experiment.restnum > 0:
-            if self.all_stim_durations is None:
-                # Old Package Code
-                ITIli = [
-                    y + self.experiment.trial_duration if not x == "R" else y
-                    for x, y in zip(orderli, ITIli)
-                ]
-                onsets = np.cumsum(ITIli) - self.experiment.trial_duration
+        onsetX, XindStim = _round_to_resolution(
+            self.event_onsets, self.experiment.resolution
+        )
+        event_durs, _ = _round_to_resolution(
+            self.realized_event_durations, self.experiment.resolution
+        )
+        stim_duration_tp = [
+            int(round(float(x) / self.experiment.resolution)) for x in event_durs
+        ]
+        max_endpoint = max(
+            XindStim[i] + stim_duration_tp[i] for i in range(len(self.order))
+        )
+        if max_endpoint > self.experiment.n_tp:
+            return False
 
-                self.onsets = [y for x, y in zip(orderli, onsets) if not x == "R"]
-            else:
-                for x in np.arange(0, self.experiment.n_trials, self.experiment.restnum)[
-                    1:
-                ][::-1]:
-                    orderli.insert(x, "R")
-                    ITIli.insert(x, self.experiment.restdur)
+        X_X = np.zeros([self.experiment.n_tp, self.experiment.n_stimuli])
+        for i, stim in enumerate(self.order):
+            onset = XindStim[i]
+            dur = stim_duration_tp[i]
+            for j in range(dur):
+                t_idx = onset + j
+                if 0 <= t_idx < self.experiment.n_tp:
+                    X_X[t_idx, int(stim)] = 1
 
-                # Calculate ITI_li based on rest numbers and
-                # varied trial duration. Use a separate trial
-                # counter since orderli now has "R" entries
-                # but all_stim_durations has n_trials entries.
-                ITIli_new = []
-                onsets = []
-                trial_idx = 0
-                for i, (x, y) in enumerate(zip(orderli, ITIli)):
-                    if not x == "R":
-                        ITIli_new.append(y + self.all_stim_durations[trial_idx])
-                        trial_idx += 1
-                    else:
-                        ITIli_new.append(y)
-
-                ITIli_cumsum = np.cumsum(ITIli_new)
-                # Subtracts the cumulative sum by the respective trial durations
-                # while excluding the rest trials.
-                trial_idx = 0
-                for i, (x, y) in enumerate(zip(orderli, ITIli_cumsum)):
-                    if not x == "R":
-                        onsets.append(y - self.all_stim_durations[trial_idx])
-                        trial_idx += 1
-
-                self.onsets = onsets
-        else:
-            if self.all_stim_durations is None:
-                # Old Package Code
-                ITIli = np.array(self.ITI) + self.experiment.trial_duration
-                self.onsets = np.cumsum(ITIli) - self.experiment.trial_duration
-            else:
-                # Modified by Atharv Umap
-                ITIli_new = [y + x for x, y in zip(self.all_stim_durations, ITIli)]
-                ITIli_cumsum = np.cumsum(ITIli_new)
-
-                onsets_temp = []
-                for x, y in zip(self.all_stim_durations, list(ITIli_cumsum)):
-                    onsets_temp.append(y - x)
-                self.onsets = onsets_temp
-
-        stimonsets = [x + self.experiment.t_pre for x in self.onsets]
-
-        # round onsets to resolution
-        self.ITI, x = _round_to_resolution(self.ITI, self.experiment.resolution)
-        onsetX, XindStim = _round_to_resolution(stimonsets, self.experiment.resolution)
-
-        if self.all_stim_durations is None:
-            stim_duration_tp = int(
-                self.experiment.stim_duration / self.experiment.resolution
-            )
-
-            # Check if design fits in container — reject if not
-            if np.max(XindStim) + stim_duration_tp > self.experiment.n_tp:
-                return False
-
-            # create design matrix in resolution scale (=deltasM in Kao toolbox)
-            X_X = np.zeros([self.experiment.n_tp, self.experiment.n_stimuli])
-            for stimulus in range(self.experiment.n_stimuli):
-                for dur in range(stim_duration_tp):
-                    X_X[np.array(XindStim) + dur, int(stimulus)] = [
-                        1 if z == stimulus else 0 for z in self.order
-                    ]
-        else:
-            stim_duration_tp = (
-                np.array(self.all_stim_durations) / self.experiment.resolution
-            )
-            stim_duration_tp = [int(x) for x in stim_duration_tp]
-
-            # Check if design fits in container — reject if not
-            max_endpoint = max(
-                XindStim[i] + stim_duration_tp[i] for i in range(len(self.order))
-            )
-            if max_endpoint > self.experiment.n_tp:
-                return False
-
-            X_X = np.zeros([self.experiment.n_tp, self.experiment.n_stimuli])
-            # indexing and traversing through the order
-            for i, stim in enumerate(self.order):
-                # the current onset
-                onset = XindStim[i]
-                # the duration between the onsets
-                dur = stim_duration_tp[i]
-                # labeling the binary values of the indices with
-                for j in range(dur):
-                    t_idx = onset + j
-                    if t_idx < self.experiment.n_tp:
-                        X_X[t_idx, stim] = 1
-
-        # deconvolved matrix in resolution units
         deconvM = np.zeros(
             [
                 self.experiment.n_tp,
@@ -350,32 +685,28 @@ class Design:
             ]
         )
         for stim in range(self.experiment.n_stimuli):
-            for j in range(int(self.experiment.laghrf)):
+            for j in range(min(int(self.experiment.laghrf), self.experiment.n_tp)):
                 deconvM[j:, self.experiment.laghrf * stim + j] = X_X[
                     : (self.experiment.n_tp - j), stim
                 ]
 
-        # downsample and whiten deconvM
         idxX = [
             int(x)
             for x in np.arange(
                 0, self.experiment.n_tp, self.experiment.TR / self.experiment.resolution
             )
         ]
-
         if len(idxX) - self.experiment.white.shape[0] == 1:
             idxX = idxX[: self.experiment.white.shape[0]]
 
         deconvMdown = deconvM[idxX, :]
         Xwhite = np.dot(np.dot(t(deconvMdown), self.experiment.white), deconvMdown)
 
-        # convolve design matrix
         X_Z = np.zeros([self.experiment.n_tp, self.experiment.n_stimuli])
         for stim in range(self.experiment.n_stimuli):
             X_Z[:, stim] = deconvM[
                 :, (stim * self.experiment.laghrf) : ((stim + 1) * self.experiment.laghrf)
             ].dot(self.experiment.basishrf)
-
         X_Z = X_Z[idxX, :]
         X_X = X_X[idxX, :]
         Zwhite = t(X_Z) @ self.experiment.white @ X_Z
@@ -386,28 +717,17 @@ class Design:
         self.Xnonconv = X_X
         self.CX = self.experiment.CX
         self.C = self.experiment.C
-
         return self
 
     def FeCalc(self, Aoptimality=True):
-        """
-        Compute estimation efficiency.
-
-        :param Aoptimality: Kind of optimality to optimize, A- or D-optimality
-        :type Aoptimality: boolean
-        """
+        """Compute estimation-efficiency score ``Fe`` for the deconvolved model."""
         try:
             invM = scipy.linalg.inv(self.X)
         except scipy.linalg.LinAlgError:
-            try:
-                invM = scipy.linalg.pinv(self.X)
-            except np.linalg.linalg.LinAlgError:
-                invM = np.nan
-
+            invM = scipy.linalg.pinv(self.X)
         invM = np.array(invM)
-        st1 = np.dot(self.CX, invM)
-        CMC = np.dot(st1, t(self.CX))
-        if Aoptimality is True:
+        CMC = np.dot(np.dot(self.CX, invM), t(self.CX))
+        if Aoptimality:
             self.Fe = float(self.CX.shape[0] / np.trace(CMC))
         else:
             self.Fe = float(np.linalg.det(CMC) ** (-1 / len(self.C)))
@@ -415,40 +735,38 @@ class Design:
         return self
 
     def FdCalc(self, Aoptimality=True):
-        """
-        Compute detection power.
-
-        :param Aoptimality: Kind of optimality to optimize: A- or D-optimality
-        :type Aoptimality: boolean
-        """
+        """Compute detection-efficiency score ``Fd`` for the convolved model."""
         try:
             invM = scipy.linalg.inv(self.Z)
         except scipy.linalg.LinAlgError:
-            try:
-                invM = scipy.linalg.pinv(self.Z)
-            except np.linalg.linalg.LinAlgError:
-                invM = np.nan
-
+            invM = scipy.linalg.pinv(self.Z)
         invM = np.array(invM)
         CMC = self.C @ invM @ t(self.C)
-        if Aoptimality is True:
+        if Aoptimality:
             self.Fd = float(len(self.C) / np.trace(CMC))
         else:
             self.Fd = float(np.linalg.det(CMC) ** (-1 / len(self.C)))
         self.Fd = self.Fd / self.experiment.FdMax
         return self
 
-    def FcCalc(self, confoundorder=3):
-        """
-        Compute confounding efficiency.
+    def _frequency_mismatch(self) -> float:
+        """Measure deviation between observed and expected flattened event counts."""
+        event_count = len(self.order)
+        trialcount = Counter(self.order)
+        observed_counts = np.array(
+            [trialcount.get(x, 0) for x in range(self.experiment.n_stimuli)],
+            dtype=float,
+        )
+        expected_counts = float(event_count) * np.array(self.experiment.P, dtype=float)
+        return float(np.sum(np.abs(observed_counts - expected_counts)))
 
-        :param confoundorder: To what order should confounding be protected
-        :type confoundorder: integer
-        """
+    def _transition_mismatch(self, confoundorder=3) -> float:
+        """Measure deviation from expected flattened transition counts."""
+        event_count = len(self.order)
         Q = np.zeros(
             [self.experiment.n_stimuli, self.experiment.n_stimuli, confoundorder]
         )
-        for n in range(len(self.order)):
+        for n in range(event_count):
             for r in np.arange(1, confoundorder + 1):
                 if n > (r - 1):
                     Q[self.order[n], self.order[n - r], r - 1] += 1
@@ -459,36 +777,28 @@ class Design:
             for sj in range(self.experiment.n_stimuli):
                 for r in np.arange(1, confoundorder + 1):
                     Qexp[si, sj, r - 1] = (
-                        self.experiment.P[si]
-                        * self.experiment.P[sj]
-                        * (self.experiment.n_trials + 1)
+                        self.experiment.P[si] * self.experiment.P[sj] * (event_count + 1)
                     )
-        Qmatch = np.sum(abs(Q - Qexp))
-        self.Fc = Qmatch
-        self.Fc = 1 - self.Fc / self.experiment.FcMax
+        return float(np.sum(np.abs(Q - Qexp)))
+
+    def FcCalc(self, confoundorder=3):
+        """Compute transition-balance score ``Fc`` on the flattened event axis."""
+        event_count = len(self.order)
+        Qmatch = self._transition_mismatch(confoundorder)
+        fc_max = self.experiment.fc_max_for_event_count(event_count, confoundorder)
+        self.Fc = 1.0 if np.isclose(fc_max, 0.0) else 1 - (Qmatch / fc_max)
         return self
 
     def FfCalc(self):
-        """Compute efficiency of frequencies."""
-        trialcount = Counter(self.order)
-        Pobs = [trialcount[x] for x in range(self.experiment.n_stimuli)]
-        self.Ff = np.sum(
-            abs(
-                np.array(Pobs)
-                - np.array(self.experiment.n_trials * np.array(self.experiment.P))
-            )
-        )
-        self.Ff = 1 - self.Ff / self.experiment.FfMax
+        """Compute frequency-balance score ``Ff`` on the flattened event axis."""
+        event_count = len(self.order)
+        mismatch = self._frequency_mismatch()
+        ff_max = self.experiment.ff_max_for_event_count(event_count)
+        self.Ff = 1.0 if np.isclose(ff_max, 0.0) else 1 - mismatch / ff_max
         return self
 
     def FCalc(self, weights, Aoptimality=True, confoundorder=3):
-        """
-        Compute weighted average of efficiencies.
-
-        :param weights: Weights given to each of the efficiency metrics in this order:
-                        Estimation, Detection, Frequencies, Confounders.
-        :type weights: list of floats
-        """
+        """Compute all requested component scores and their weighted objective."""
         if weights[0] > 0:
             self.FeCalc(Aoptimality)
         if weights[1] > 0:
@@ -496,78 +806,42 @@ class Design:
         self.FfCalc()
         self.FcCalc(confoundorder)
         matr = np.array([self.Fe, self.Fd, self.Ff, self.Fc])
-        self.F = np.sum(weights * matr)
+        self.F = float(np.sum(np.array(weights) * matr))
         return self
+
+    def export_schedule(self) -> list[dict[str, Any]]:
+        """Return the row-wise event schedule used for reports and validation."""
+        return copy.deepcopy(self.schedule_table)
+
+    def export_payload(self) -> dict[str, Any]:
+        """Export schedule arrays, counts, and metrics for downstream artifacts."""
+        return {
+            "counts": {
+                "n_conceptual_trials": int(self.experiment.n_conceptual_trials),
+                "n_events": int(self.n_events),
+            },
+            "schedule": self.export_schedule(),
+            "schedule_arrays": copy.deepcopy(self.schedule),
+            "metrics": {
+                "F": float(self.F),
+                "Fe": float(self.Fe),
+                "Fd": float(self.Fd),
+                "Ff": float(self.Ff),
+                "Fc": float(self.Fc),
+            },
+        }
+
+    def stable_hash(self) -> str:
+        """Return a deterministic hash of the exported realized design payload."""
+        return hashlib.sha256(_stable_json_bytes(self.export_payload())).hexdigest()
 
 
 class Experiment:
-    """
-    This class represents an fMRI experiment.
+    """Store the experiment specification and generate realized designs.
 
-    :param TR: The repetition time.
-    :type  TR: float
-
-    :param P: The probabilities of each trialtype.
-    :type  P: ndarray
-
-    :param C: The contrast matrix.  Example: np.array([[1,-1,0],[0,1,-1]])
-    :type  C: ndarray
-
-    :param rho: AR(1) correlation coefficient
-    :type  rho: float
-
-    :param n_stimuli: The number of stimuli (or conditions) in the experiment.
-    :type  n_stimuli: integer
-
-    :param n_trials: The number of trials in the experiment.
-                     Either specify n_trials **or** duration.
-    :type  n_trials: integer
-
-    :param duration: The total duration (seconds) of the experiment.
-                     Either specify n_trials **or** duration.
-    :type  duration: float
-
-    :param resolution: the maximum resolution of design matrix
-    :type  resolution: float
-
-    :param stim_duration: duration (seconds) of stimulus
-    :type  stim_duration: float
-
-    :param t_pre: duration (seconds) of trial part before stimulus presentation
-                  (eg. fixation cross)
-    :type  t_pre: float
-
-    :param t_post: duration (seconds) of trial part after stimulus presentation
-    :type  t_post: float
-
-    :param maxrep: maximum number of repetitions
-    :type  maxrep: integer or None
-
-    :param hardprob: can the probabilities differ from the nominal value?
-    :type  hardprob: boolean
-
-    :param confoundorder: The order to which confounding is controlled.
-    :type  confoundorder: integer
-
-    :param restnum: Number of trials between restblocks
-    :type  restnum: integer
-
-    :param restdur: duration (seconds) of the rest blocks
-    :type  restdur: float
-
-    :param ITImodel: Which model to sample from.
-                     Possibilities: "fixed","uniform","exponential"
-    :type  ITImodel: string
-
-    :param ITImin: The minimum ITI (required with "uniform" or "exponential")
-    :type  ITImin: float
-
-    :param ITImean: The mean ITI (required with "fixed" or "exponential")
-    :type  ITImean: float
-
-    :param ITImax: The max ITI (required with "uniform" or "exponential")
-    :type  ITImax: float
-
+    Version 2 distinguishes conceptual trials from flattened modeled events:
+    conceptual-trial counts govern sampling and trial boundaries, while the
+    realized event axis governs event-level timing and Ff/Fc calculations.
     """
 
     def __init__(
@@ -576,18 +850,15 @@ class Experiment:
         P,
         C,
         rho: float,
-        stim_duration,
         n_stimuli: int,
-        stimuli_durations=None,
-        conditional_ITI=None,  # Specification for condition-dependent ITI distributions
-        ITImodel=None,
-        ITImin=None,
-        ITImax=None,
-        ITImean=None,
-        restnum=0,
-        restdur=0,
-        t_pre=0,
-        t_post=0,
+        stim_duration=None,
+        event_durations=None,
+        trial_start_interval=0.0,
+        post_event_interval=0.0,
+        event_transition_interval=0.0,
+        inter_trial_interval=0.0,
+        rest_every_n_trials=None,
+        rest_interval=0.0,
         n_trials: int | None = None,
         duration=None,
         resolution=0.1,
@@ -599,81 +870,61 @@ class Experiment:
         hardprob=False,
         confoundorder=3,
         order=None,
-        order_probabilities=None,
-        order_keys=None,
-        order_length=None,
-        order_fixed=False,
+        trial_templates=None,
+        trials=None,
+        trial_template_probabilities=None,
+        n_conceptual_trials=None,
+        seed: int | None = None,
+        ordertype: str = "random",
+        restnum=None,
+        restdur=None,
         trial_max=None,
+        **kwargs,
     ):
-        self.TR = TR
-        self.P = P
-        self.C = np.array(C)
-        self.rho = rho
-        self.n_stimuli = n_stimuli
-        self.t_pre = t_pre
-        self.t_post = t_post
-        self.n_trials = n_trials
-        self.duration = duration
-        self.resolution = resolution
-        self.stim_duration = stim_duration
+        """Create an experiment specification.
 
-        # We will calculate all stimuli durations based on the given values
-        # NOTE: all_stim_durations is now stored per-Design, not per-Experiment.
-        # The Experiment only stores the *specification* (stimuli_durations dict/list).
-
-        # Modification
-        # Working with multiple stimuli durations
-        if stimuli_durations is not None:
-            assert (
-                len(stimuli_durations) == n_stimuli
-            ), "Must specify a duration for each stimulus"
-            assert (
-                trial_max is not None
-            ), "Must provide a trial_max given stimuli_durations"
-            self.trial_max = trial_max
-            self.stimuli_durations = stimuli_durations
-        else:
-            self.trial_max = stim_duration
-            self.stimuli_durations = None
-
-        self.order_probabilities = order_probabilities
-        self.order_keys = order_keys
-        self.order_length = order_length
-        self.order_fixed = order_fixed
-
-        # Adding the custom order
-        if order is not None:
-            self.order = order
-            self.order_fixed = True
-        else:
-            self.order = None
-            if order_probabilities is not None:
-                self.order = self.sample_from_probabilities(
-                    order_probabilities, order_keys, order_length
+        The constructor accepts either classic flat one-event designs or
+        template-based conceptual-trial specifications. In template modes,
+        ``n_conceptual_trials`` controls sampling and boundaries, while the
+        realized flattened event sequence determines event-level timing and
+        Ff/Fc metrics.
+        """
+        for old_name, replacement in REMOVED_TIMING_ARGUMENTS.items():
+            if old_name in kwargs:
+                raise TypeError(
+                    f"{old_name!r} was removed in neurodesign-plus 2.0; use {replacement!r} instead"
                 )
+        if restnum is not None or restdur is not None:
+            raise TypeError(
+                "restnum/restdur were removed in neurodesign-plus 2.0; use rest_every_n_trials/rest_interval"
+            )
 
+        self.TR = float(TR)
+        self.P = np.array(P, dtype=float)
+        self.C = np.array(C, dtype=float)
+        self.rho = float(rho)
+        self.n_stimuli = int(n_stimuli)
+        self.resolution = float(resolution)
         self.maxrep = maxrep
         self.hardprob = hardprob
         self.confoundorder = confoundorder
-
-        # Adding a conditional ITI for stimulus-dependent intervals
-        self.conditional_ITI = conditional_ITI
-
-        self.ITImodel = ITImodel
-        self.ITImin = ITImin
-        self.ITImean = ITImean
-        self.ITImax = ITImax
-        self.ITIlam = None
-
-        self.restnum = restnum
-        self.restdur = restdur
-
         self.FeMax = FeMax
         self.FdMax = FdMax
         self.FcMax = FcMax
         self.FfMax = FfMax
+        self.seed = seed if seed is not None else 1234
+        self.ordertype = ordertype
+        self.duration = duration
+        self.n_trials = n_trials
+        self.n_conceptual_trials = n_conceptual_trials
+        self.trial_max = trial_max
+        self.stim_duration = stim_duration
+        self.requested_event_durations = copy.deepcopy(
+            event_durations
+            if event_durations is not None
+            else stim_duration if stim_duration is not None else 1.0
+        )
 
-        # make sure resolution is a divisor of TR (up to )
         if not np.isclose(self.TR % self.resolution, 0):
             self.resolution = _find_new_resolution(self.TR, self.resolution)
             warnings.warn(
@@ -681,116 +932,411 @@ class Experiment:
                 f"New resolution: {self.resolution}"
             )
 
+        self.trial_start_interval_requested = copy.deepcopy(trial_start_interval)
+        self.post_event_interval_requested = copy.deepcopy(post_event_interval)
+        self.event_transition_interval_requested = copy.deepcopy(
+            event_transition_interval
+        )
+        self.inter_trial_interval_requested = copy.deepcopy(inter_trial_interval)
+        self.rest_interval_requested = copy.deepcopy(rest_interval)
+        self.rest_every_n_trials = rest_every_n_trials
+
+        self.order = order
+        self.order_fixed = order is not None
+        self.trial_templates_public = copy.deepcopy(trial_templates)
+        self.trials_public = copy.deepcopy(trials)
+        self.trial_template_probabilities = copy.deepcopy(trial_template_probabilities)
+
+        self._resolve_mode()
+        self._prepare_categories()
+        self.event_duration_spec = self._normalize_event_duration_spec(
+            self.requested_event_durations
+        )
+        self.trial_start_interval_spec = normalize_rule(
+            trial_start_interval, "trial_start_interval"
+        )
+        self.post_event_interval_spec = normalize_rule(
+            post_event_interval, "post_event_interval"
+        )
+        self.event_transition_interval_spec = normalize_rule(
+            event_transition_interval, "event_transition_interval"
+        )
+        self.inter_trial_interval_spec = normalize_rule(
+            inter_trial_interval, "inter_trial_interval"
+        )
+        self.rest_interval_spec = normalize_rule(rest_interval, "rest_interval")
+        self._validate_mode_specific_semantics()
+        self._prepare_templates_and_trials()
         self.countstim()
         self.CreateTsComp()
         self.CreateLmComp()
+        self._ff_max_cache: dict[int, float] = {}
+        self._fc_max_cache: dict[tuple[int, int], float] = {}
         self.max_eff()
 
-    def max_eff(self):
-        """Compute maximum efficiency for Confounding and Frequency efficiency."""
-        NulDesign = Design(
-            order=[np.argmin(self.P)] * self.n_trials,
-            ITI=[0] + [self.ITImean] * (self.n_trials - 1),
-            experiment=self,
-        )
-        NulDesign.designmatrix()
-        NulDesign.FcCalc(self.confoundorder)
-        self.FcMax = 1 - NulDesign.Fc
-        NulDesign.FfCalc()
-        self.FfMax = 1 - NulDesign.Ff
+    def _resolve_mode(self):
+        """Infer which scheduling mode is active from the provided inputs."""
+        has_templates = self.trial_templates_public is not None
+        has_trials = self.trials_public is not None
+        has_probs = self.trial_template_probabilities is not None
+        has_n_conceptual = self.n_conceptual_trials is not None
+        if self.order is not None and (
+            has_templates or has_trials or has_probs or has_n_conceptual
+        ):
+            raise ValueError(
+                "order is mutually exclusive with template-based trial inputs"
+            )
+        if has_trials and not has_templates:
+            raise ValueError("trials requires trial_templates")
+        if has_probs or has_n_conceptual:
+            if not (has_templates and has_probs and has_n_conceptual):
+                raise ValueError(
+                    "probabilistic template mode requires trial_templates, trial_template_probabilities, and n_conceptual_trials"
+                )
+            if has_trials:
+                raise ValueError(
+                    "trials may not be combined with probabilistic template sampling"
+                )
+            self.mode = "template_sampled"
+        elif has_trials:
+            self.mode = "fixed_trials"
+        elif self.order is not None:
+            self.mode = "flat_fixed_order"
+        else:
+            self.mode = "flat_generated"
+            if self.n_trials is None:
+                raise ValueError("flat one-event generation requires n_trials")
 
-        return self
+    def _prepare_categories(self):
+        """Resolve modeled event-category labels and integer codes."""
+        if self.mode in {"fixed_trials", "template_sampled"}:
+            explicit_codes = {}
+            categories = []
+            for template in self.trial_templates_public:
+                for event in template["events"]:
+                    category = event["category"]
+                    categories.append(category)
+                    if "code" in event:
+                        explicit_codes[category] = int(event["code"])
+            seen = []
+            for category in categories:
+                if category not in seen:
+                    seen.append(category)
+            if explicit_codes:
+                if len(explicit_codes) != len(seen):
+                    raise ValueError(
+                        "every template event category must define an explicit code or none may"
+                    )
+                if sorted(explicit_codes.values()) != list(range(self.n_stimuli)):
+                    raise ValueError(
+                        "explicit template event codes must cover 0..n_stimuli-1"
+                    )
+                ordered = [None] * self.n_stimuli
+                for category, code in explicit_codes.items():
+                    ordered[code] = category
+                self.category_labels = ordered
+            else:
+                self.category_labels = list(seen)
+            if len(self.category_labels) != self.n_stimuli:
+                raise ValueError(
+                    "n_stimuli must match the number of unique modeled event categories"
+                )
+            self.category_to_index = {
+                label: idx for idx, label in enumerate(self.category_labels)
+            }
+        else:
+            self.category_labels = list(range(self.n_stimuli))
+            self.category_to_index = {idx: idx for idx in range(self.n_stimuli)}
+
+    def _normalize_event_duration_spec(self, spec):
+        """Normalize event-duration rules for flat or template-based designs."""
+        if (
+            self.mode in {"fixed_trials", "template_sampled"}
+            and self.trial_templates_public is not None
+        ):
+            per_category: dict[Any, Any] = {}
+            for template in self.trial_templates_public:
+                for event in template["events"]:
+                    category = event["category"]
+                    duration_spec = event.get("duration", spec)
+                    if (
+                        category in per_category
+                        and per_category[category] != duration_spec
+                    ):
+                        raise ValueError(
+                            f"event category {category!r} has conflicting duration specifications across templates"
+                        )
+                    per_category[category] = duration_spec
+            return {
+                "selector_kind": "by_event_category",
+                "rules": {
+                    category: normalize_rule(rule, f"event_durations[{category!r}]")
+                    for category, rule in per_category.items()
+                },
+            }
+        if isinstance(spec, list):
+            if len(spec) != self.n_stimuli:
+                raise ValueError("event_durations list length must match n_stimuli")
+            rules = {}
+            for idx, rule in enumerate(spec):
+                rules[
+                    (
+                        idx
+                        if self.mode in {"flat_generated", "flat_fixed_order"}
+                        else self.category_labels[idx]
+                    )
+                ] = normalize_rule(rule, f"event_durations[{idx}]")
+            return {"selector_kind": "by_event_category", "rules": rules}
+        normalized = normalize_rule(spec, "event_durations")
+        if isinstance(normalized, SelectorSpec):
+            return {
+                "selector_kind": normalized.selector_kind,
+                "rules": normalized.rules,
+                "default": normalized.default,
+            }
+        return normalized
+
+    def _validate_mode_specific_semantics(self):
+        """Reject unsupported timing combinations for the chosen mode."""
+        if isinstance(self.inter_trial_interval_spec, SelectorSpec):
+            raise ValueError(
+                "inter_trial_interval does not support selector wrappers in version 2.0"
+            )
+        if isinstance(self.rest_interval_spec, SelectorSpec):
+            raise ValueError(
+                "rest_interval does not support selector wrappers in version 2.0"
+            )
+        if self.rest_every_n_trials is None and self.rest_interval_requested not in (
+            0,
+            0.0,
+            {"model": "fixed", "mean": 0.0},
+        ):
+            if not (
+                isinstance(self.rest_interval_requested, (int, float))
+                and float(self.rest_interval_requested) == 0.0
+            ):
+                raise ValueError("rest_interval requires rest_every_n_trials")
+        if self.rest_every_n_trials is not None and (
+            not isinstance(self.rest_every_n_trials, int) or self.rest_every_n_trials <= 0
+        ):
+            raise ValueError("rest_every_n_trials must be a positive integer")
+
+    def _prepare_templates_and_trials(self):
+        """Normalize conceptual-trial templates and fixed trial sequences."""
+        self.templates_by_id: dict[str, dict[str, Any]] = {}
+        self.template_ids: list[str] = []
+        if self.trial_templates_public is not None:
+            for template in self.trial_templates_public:
+                template_id = template["template_id"]
+                if template_id in self.templates_by_id:
+                    raise ValueError(f"duplicate template_id {template_id!r}")
+                if not template.get("events"):
+                    raise ValueError(
+                        f"template {template_id!r} must define at least one event"
+                    )
+                normalized_events = []
+                for event_index, event in enumerate(template["events"]):
+                    category = event["category"]
+                    if category not in self.category_to_index:
+                        raise ValueError(
+                            f"unknown event category {category!r} in template {template_id!r}"
+                        )
+                    duration_spec = event.get("duration", self.requested_event_durations)
+                    rule = normalize_rule(
+                        duration_spec,
+                        f"trial_templates[{template_id!r}].events[{event_index}].duration",
+                    )
+                    if isinstance(rule, SelectorSpec):
+                        raise ValueError(
+                            "event duration selectors inside template events are not supported"
+                        )
+                    normalized_events.append(
+                        {
+                            "category": category,
+                            "code": self.category_to_index[category],
+                            "duration_rule": rule,
+                        }
+                    )
+                self.templates_by_id[template_id] = {
+                    "template_id": template_id,
+                    "trial_type": template.get("trial_type", template_id),
+                    "events": normalized_events,
+                }
+                self.template_ids.append(template_id)
+        if self.mode == "fixed_trials":
+            self.fixed_trial_sequence = []
+            for idx, trial in enumerate(self.trials_public):
+                template_id = trial["template_id"]
+                if template_id not in self.templates_by_id:
+                    raise ValueError(
+                        f"trial {idx} references unknown template_id {template_id!r}"
+                    )
+                self.fixed_trial_sequence.append(template_id)
+            self.n_conceptual_trials = len(self.fixed_trial_sequence)
+        elif self.mode == "template_sampled":
+            if len(self.trial_template_probabilities) != len(self.template_ids):
+                raise ValueError(
+                    "trial_template_probabilities must align with trial_templates"
+                )
+            probs = np.array(self.trial_template_probabilities, dtype=float)
+            if np.any(probs < 0) or not np.isclose(probs.sum(), 1.0):
+                raise ValueError(
+                    "trial_template_probabilities must be non-negative and sum to 1"
+                )
+            self.template_probabilities = probs
+        else:
+            self.fixed_trial_sequence = None
+            if self.order is not None:
+                self.n_conceptual_trials = len(self.order)
+
+    def make_design_rng(self, salt: int = 0) -> np.random.Generator:
+        """Create a reproducible RNG derived from the experiment seed."""
+        ss = np.random.SeedSequence([self.seed, salt])
+        return np.random.default_rng(ss)
+
+    def sample_template_id(self, rng: np.random.Generator) -> str:
+        """Sample one template identifier from the configured template weights."""
+        idx = int(rng.choice(len(self.template_ids), p=self.template_probabilities))
+        return self.template_ids[idx]
+
+    def sample_trial_sequence(self, rng: np.random.Generator) -> list[str]:
+        """Sample a full conceptual-trial template sequence."""
+        return [self.sample_template_id(rng) for _ in range(self.n_conceptual_trials)]
+
+    def _spec_max(self, spec: NormalizedRule | SelectorSpec | dict[str, Any]) -> float:
+        """Return a conservative upper bound for a timing rule."""
+        if isinstance(spec, NormalizedRule):
+            if spec.model == "fixed":
+                return float(spec.mean)
+            if spec.model == "uniform":
+                return float(spec.max)
+            if spec.model == "exponential":
+                return float(
+                    spec.max if spec.max is not None else max(spec.mean * 4, spec.mean)
+                )
+            if spec.model == "gaussian":
+                return float(
+                    spec.max if spec.max is not None else spec.mean + 4 * spec.std
+                )
+        if isinstance(spec, SelectorSpec):
+            values = [self._spec_max(rule) for rule in spec.rules.values()]
+            if spec.default is not None:
+                values.append(self._spec_max(spec.default))
+            return max(values) if values else 0.0
+        if isinstance(spec, dict) and "rules" in spec:
+            return max(self._spec_max(rule) for rule in spec["rules"].values())
+        raise TypeError(f"Unsupported spec for max extraction: {type(spec)!r}")
+
+    def _resolve_rule(
+        self, spec, selector_value, arg_name: str
+    ) -> tuple[NormalizedRule, str]:
+        """Resolve one selector-dispatched rule and its provenance label."""
+        if isinstance(spec, NormalizedRule):
+            return spec, _rule_id(arg_name)
+        if isinstance(spec, SelectorSpec):
+            if selector_value in spec.rules:
+                return spec.rules[selector_value], _rule_id(arg_name, selector_value)
+            if spec.default is not None:
+                return spec.default, _rule_id(arg_name, "default")
+            raise ValueError(
+                f"{arg_name} has no rule for selector {selector_value!r} and no default"
+            )
+        if isinstance(spec, dict) and spec.get("selector_kind") == "by_event_category":
+            rules = spec["rules"]
+            if selector_value in rules:
+                rule = rules[selector_value]
+                if isinstance(rule, SelectorSpec):
+                    raise ValueError(f"{arg_name} nested selector is not supported")
+                return rule, _rule_id(arg_name, selector_value)
+            default = spec.get("default")
+            if default is not None:
+                return default, _rule_id(arg_name, "default")
+            raise ValueError(
+                f"{arg_name} has no rule for event category {selector_value!r}"
+            )
+        raise TypeError(f"Unsupported rule specification for {arg_name}")
+
+    def _sample_value(
+        self, spec, selector_value, arg_name: str, rng: np.random.Generator
+    ) -> tuple[float, str]:
+        """Sample one realized timing value and keep its provenance identifier."""
+        rule, rule_id = self._resolve_rule(spec, selector_value, arg_name)
+        return sample_normalized_rule(rule, arg_name, rng, self.resolution), rule_id
+
+    def _estimate_flat_trial_max(self) -> float:
+        """Estimate the maximum event duration for flat one-event trial modes."""
+        if isinstance(self.event_duration_spec, NormalizedRule):
+            event_max = self._spec_max(self.event_duration_spec)
+        else:
+            event_max = max(
+                self._spec_max(rule)
+                for rule in self.event_duration_spec["rules"].values()
+            )
+        return event_max
 
     def countstim(self):
-        """Compute some arguments depending on other arguments.
+        """Compute duration summaries implied by the active scheduling mode."""
+        if self.mode in {"flat_generated", "flat_fixed_order"}:
+            self.n_conceptual_trials = (
+                self.n_trials if self.n_trials is not None else len(self.order)
+            )
+            self.trial_duration = (
+                self._estimate_flat_trial_max()
+                + self._spec_max(self.trial_start_interval_spec)
+                + self._spec_max(self.post_event_interval_spec)
+            )
+            inter_trial_max = self._spec_max(self.inter_trial_interval_spec)
+            rest_max = self._spec_max(self.rest_interval_spec)
+            total = self.n_conceptual_trials * self.trial_duration
+            total += max(self.n_conceptual_trials - 1, 0) * inter_trial_max
+            if self.rest_every_n_trials:
+                total += (
+                    (self.n_conceptual_trials - 1) // self.rest_every_n_trials
+                ) * rest_max
+            self.duration = total if self.duration is None else self.duration
+            return
 
-        Duration is always computed from EXPECTED values (trial_max + ITImean)
-        so the whitening matrix is stable across all designs in a population.
-        Individual designs may have shorter actual timing — the unused
-        timepoints in the design matrix are simply zeros (equivalent to rest).
-        """
-        self.trial_duration = self.trial_max + self.t_pre + self.t_post
-
-        if self.ITImodel == "uniform":
-            self.ITImean = (self.ITImax + self.ITImin) / 2
-
-        # Always compute duration from expected values, regardless of
-        # whether stimuli_durations is set. This keeps the container stable.
-        if self.n_trials is not None and self.duration is None:
-            ITIdur = self.n_trials * self.ITImean
-            TRIALdur = self.n_trials * self.trial_duration
-            duration = ITIdur + TRIALdur
-            if self.restnum > 0:
-                duration = duration + (
-                    np.floor(self.n_trials / self.restnum) * self.restdur
-                )
-            self.duration = duration
-        elif self.duration is not None and self.n_trials is None:
-            self.n_trials = self._compute_n_trials()
-
-    # Computes the n_trials given the duration
-
-    def _compute_n_trials(self):
-        if self.restnum == 0:
-            return int(self.duration / (self.ITImean + self.trial_duration))
-
-        # duration of block between rest
-        blockdurNR = self.restnum * (self.ITImean + self.trial_duration)
-
-        # duration of block including rest
-        blockdurWR = blockdurNR + self.restdur
-
-        # number of blocks
-        blocknum = np.floor(self.duration / blockdurWR)
-        n_trials = blocknum * self.restnum
-
-        remain = self.duration - (blocknum * blockdurWR)
-        if remain >= blockdurNR:
-            n_trials = n_trials + self.restnum
-        else:
-            extratrials = np.floor(remain / (self.ITImean + self.trial_duration))
-            n_trials = n_trials + extratrials
-
-        return int(n_trials)
+        trial_durations = []
+        for template_id in self.template_ids:
+            template = self.templates_by_id[template_id]
+            total = self._spec_max(self.trial_start_interval_spec)
+            nevents = len(template["events"])
+            for event_idx, event in enumerate(template["events"]):
+                total += self._spec_max(event["duration_rule"])
+                total += self._spec_max(self.post_event_interval_spec)
+                if event_idx < nevents - 1:
+                    total += self._spec_max(self.event_transition_interval_spec)
+            trial_durations.append(total)
+        inter_trial_max = self._spec_max(self.inter_trial_interval_spec)
+        rest_max = self._spec_max(self.rest_interval_spec)
+        max_trial_duration = max(trial_durations) if trial_durations else 0.0
+        self.trial_duration = max_trial_duration
+        total = self.n_conceptual_trials * max_trial_duration
+        total += max(self.n_conceptual_trials - 1, 0) * inter_trial_max
+        if self.rest_every_n_trials:
+            total += (
+                (self.n_conceptual_trials - 1) // self.rest_every_n_trials
+            ) * rest_max
+        self.duration = total if self.duration is None else self.duration
 
     def CreateTsComp(self):
-        """Compute the number of scans and timepoints."""
-        self.n_scans = int(np.ceil(self.duration / self.TR))  # number of scans
-        # number of timepoints  (in resolution)
+        """Build scan-grid and modeling-grid time bases."""
+        self.n_scans = int(np.ceil(self.duration / self.TR))
         self.n_tp = int(np.ceil(self.duration / self.resolution))
         self.r_scans = np.arange(0, self.duration, self.TR)
         self.r_tp = np.arange(0, self.duration, self.resolution)
-
         return self
 
     def CreateLmComp(self):
-        """Generate components for the linear model.
-
-        Components: hrf, whitening matrix,
-        autocorrelation matrix, CX.
-        """
-        # hrf
+        """Build HRF, drift, and whitening components used by design scoring."""
         self.canonical()
-
-        # contrasts
-        # expand contrasts to resolution
         self.CX = np.array(np.kron(self.C, np.eye(self.laghrf)))
-        assert self.CX.shape[0] == self.C.shape[0] * self.laghrf
-        assert self.CX.shape[1] == self.n_stimuli * self.laghrf
-
-        # drift
-        self.S = self.drift(np.arange(0, self.n_scans))  # [tp x 1]
-        assert self.S.shape == (3, self.n_scans)
-        self.S = np.asarray(self.S)
-
-        # square of the whitening matrix
+        self.S = np.asarray(self.drift(np.arange(0, self.n_scans)))
         base = [1 + self.rho**2, -1 * self.rho] + [0] * (self.n_scans - 2)
         self.V2 = scipy.linalg.toeplitz(base)
-        # set first and last to 1
         self.V2[0, 0] = 1
         self.V2[self.n_scans - 1, self.n_scans - 1] = 1
         self.V2 = np.asarray(self.V2)
-
         self.white = (
             self.V2
             - self.V2
@@ -799,36 +1345,25 @@ class Experiment:
             @ self.S
             @ self.V2
         )
-
         return self
 
     def canonical(self):
-        """Generate the canonical hrf.
-
-        :param resolution: resolution to sample the canonical hrf
-        :type resolution: float
-        """
-        # translated from spm_hrf
+        """Construct the canonical SPM-style HRF basis on the modeling grid."""
         p = [6, 16, 1, 1, 6, 0, 32]
         dt = self.resolution
         s = np.array(range(int(np.ceil(p[6] / dt))))
-        # HRF sampled at resolution
         hrf = (
             self.spm_Gpdf(s, p[0] / p[2], dt / p[2])
             - self.spm_Gpdf(s, p[1] / p[3], dt / p[3]) / p[4]
         )
         self.basishrf = hrf / np.sum(hrf)
-        s  # duration of the HRF
         self.durhrf = p[6]
-        # length of the HRF parameters in resolution scale
         self.laghrf = int(np.ceil(self.durhrf / self.resolution))
-        assert self.laghrf == len(s)
-
         return self
 
     @staticmethod
     def drift(s, deg=3):
-        """Compute a drift component."""
+        """Return polynomial drift regressors evaluated at sample locations."""
         S = np.ones([deg, len(s)])
         s = np.array(s)
         tmpt = np.array(2.0 * s / float(len(s) - 1) - 1)
@@ -841,159 +1376,658 @@ class Experiment:
 
     @staticmethod
     def spm_Gpdf(s, h, l):
-        """Generate gamma pdf."""
+        """Evaluate the gamma density used by the canonical HRF."""
         s = np.array(s)
-        res = (h - 1) * np.log(s) + h * np.log(l) - l * s - np.log(gamma(h))
-        return np.exp(res)
+        out = np.zeros_like(s, dtype=float)
+        positive = s > 0
+        res = (
+            (h - 1) * np.log(s[positive])
+            + h * np.log(l)
+            - l * s[positive]
+            - np.log(gamma(h))
+        )
+        out[positive] = np.exp(res)
+        return out
 
-    @staticmethod
-    def sample_stim_durations(order, stimuli_durations, t_pre, t_post):
-        """Sample concrete stimulus durations for a specific trial order.
+    def _null_order_for_event_count(self, event_count: int) -> list[int]:
+        """Construct the worst-case single-category null order for calibration."""
+        return [int(np.argmin(self.P))] * int(event_count)
 
-        Called per-Design (not per-Experiment) so each design gets its own
-        random draw, but they all share the same Experiment container.
+    def ff_max_for_event_count(self, event_count: int) -> float:
+        """Return the ``Ff`` normalization constant for a given event count."""
+        event_count = int(event_count)
+        cached = self._ff_max_cache.get(event_count)
+        if cached is not None:
+            return cached
+        null_order = self._null_order_for_event_count(event_count)
+        trialcount = Counter(null_order)
+        observed_counts = np.array(
+            [trialcount.get(x, 0) for x in range(self.n_stimuli)], dtype=float
+        )
+        expected_counts = float(event_count) * np.array(self.P, dtype=float)
+        mismatch = float(np.sum(np.abs(observed_counts - expected_counts)))
+        self._ff_max_cache[event_count] = mismatch
+        return mismatch
 
-        Returns a list of durations (including t_pre + t_post per trial).
-        """
-        all_stim_durations = []
-        for i in range(len(order)):
-            stimuli = order[i]
-            key = stimuli_durations[stimuli]
+    def fc_max_for_event_count(
+        self, event_count: int, confoundorder: int | None = None
+    ) -> float:
+        """Return the ``Fc`` normalization constant for a given event count."""
+        event_count = int(event_count)
+        confoundorder = (
+            self.confoundorder if confoundorder is None else int(confoundorder)
+        )
+        cache_key = (event_count, confoundorder)
+        cached = self._fc_max_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        null_order = self._null_order_for_event_count(event_count)
+        Q = np.zeros([self.n_stimuli, self.n_stimuli, confoundorder])
+        for n in range(event_count):
+            for r in np.arange(1, confoundorder + 1):
+                if n > (r - 1):
+                    Q[null_order[n], null_order[n - r], r - 1] += 1
+        Qexp = np.zeros([self.n_stimuli, self.n_stimuli, confoundorder])
+        for si in range(self.n_stimuli):
+            for sj in range(self.n_stimuli):
+                for r in np.arange(1, confoundorder + 1):
+                    Qexp[si, sj, r - 1] = self.P[si] * self.P[sj] * (event_count + 1)
+        mismatch = float(np.sum(np.abs(Q - Qexp)))
+        self._fc_max_cache[cache_key] = mismatch
+        return mismatch
 
-            if isinstance(key, dict):
-                params = key
+    def max_eff(self):
+        """Initialize cached normalization constants for the active experiment."""
+        if self.mode == "template_sampled":
+            return self
+        if self.mode == "flat_generated":
+            event_count = self.n_trials
+        elif self.mode == "flat_fixed_order":
+            event_count = len(self.order)
+        elif self.mode == "fixed_trials":
+            event_count = sum(
+                len(self.templates_by_id[trial["template_id"]]["events"])
+                for trial in self.trials_public
+            )
+        else:
+            event_count = self.n_trials
+        self.FfMax = self.ff_max_for_event_count(event_count)
+        self.FcMax = self.fc_max_for_event_count(event_count, self.confoundorder)
+        return self
 
-                if params["model"] == "fixed":
-                    all_stim_durations.append(params["mean"])
-                elif params["model"] == "exponential":
-                    val = np.random.exponential(scale=params["mean"])
-                    if "min" in params:
-                        val = max(val, params["min"])
-                    if "max" in params:
-                        val = min(val, params["max"])
-                    all_stim_durations.append(val)
-                elif params["model"] == "uniform":
-                    all_stim_durations.append(
-                        np.random.uniform(params["min"], params["max"])
-                    )
-                elif params["model"] == "gaussian":
-                    mean = params.get("mean", 0)
-                    std = params.get("std", 1)
-                    val = np.random.normal(loc=mean, scale=std)
-                    if "min" in params:
-                        val = max(val, params["min"])
-                    if "max" in params:
-                        val = min(val, params["max"])
-                    all_stim_durations.append(val)
+    def realize_manual_flat_design(
+        self, order, inter_trial_intervals, all_event_durations=None
+    ):
+        """Materialize a flat one-event schedule from explicit event inputs."""
+        if self.mode not in {"flat_generated", "flat_fixed_order"}:
+            raise ValueError(
+                "manual design construction is supported only for flat one-event designs"
+            )
+        if len(order) != len(inter_trial_intervals):
+            raise ValueError(
+                "manual flat design requires one event-aligned inter-trial value per event"
+            )
+        rng = self.make_design_rng(500)
+        if all_event_durations is None:
+            event_durations = [
+                self._sample_value(
+                    self.event_duration_spec, code, "event_durations", rng
+                )[0]
+                for code in order
+            ]
+        else:
+            event_durations = [
+                _round_scalar(float(x), self.resolution) for x in all_event_durations
+            ]
+        trial_start_intervals = []
+        post_event_intervals = []
+        for code in order:
+            trial_start_intervals.append(
+                self._sample_value(
+                    self.trial_start_interval_spec, code, "trial_start_interval", rng
+                )[0]
+            )
+            post_event_intervals.append(
+                self._sample_value(
+                    self.post_event_interval_spec, code, "post_event_interval", rng
+                )[0]
+            )
+        schedule = self._build_flat_schedule(
+            order=list(order),
+            event_durations=event_durations,
+            trial_start_intervals=trial_start_intervals,
+            post_event_intervals=post_event_intervals,
+            inter_trial_intervals=[
+                _round_scalar(float(x), self.resolution)
+                for x in inter_trial_intervals[1:]
+            ],
+            rest_intervals=[0.0] * max(len(order) - 1, 0),
+            selector_provenance={
+                "event_duration_rule_ids": [
+                    _rule_id("event_durations", code) for code in order
+                ],
+                "trial_start_rule_ids": [_rule_id("trial_start_interval") for _ in order],
+                "post_event_rule_ids": [_rule_id("post_event_interval") for _ in order],
+                "inter_trial_rule_ids": [
+                    _rule_id("manual_inter_trial") for _ in range(max(len(order) - 1, 0))
+                ],
+                "rest_rule_ids": [
+                    _rule_id("rest_interval") for _ in range(max(len(order) - 1, 0))
+                ],
+                "event_transition_rule_ids": [],
+            },
+        )
+        schedule["legacy_event_aligned_inter_trial"] = list(inter_trial_intervals)
+        return schedule
 
+    def create_manual_design(
+        self,
+        order: Sequence[int],
+        inter_trial_intervals: Sequence[float],
+        event_durations: Sequence[float] | None = None,
+    ) -> Design:
+        """Wrap a manually specified flat schedule in a :class:`Design`."""
+        schedule = self.realize_manual_flat_design(
+            order=list(order),
+            inter_trial_intervals=list(inter_trial_intervals),
+            all_event_durations=(
+                None if event_durations is None else list(event_durations)
+            ),
+        )
+        return Design(experiment=self, schedule=schedule, trial_sequence=list(order))
+
+    def create_design(self, seed: int | None = None) -> Design:
+        """Sample or realize one design under the active scheduling mode."""
+        rng = self.make_design_rng(0 if seed is None else seed)
+        if self.mode == "flat_fixed_order":
+            schedule = self.realize_flat_order(self.order, rng)
+            return Design(
+                experiment=self, schedule=schedule, trial_sequence=list(self.order)
+            )
+        if self.mode == "fixed_trials":
+            schedule = self.realize_from_trial_sequence(
+                self.fixed_trial_sequence, rng, self.fixed_trial_sequence
+            )
+            return Design(
+                experiment=self,
+                schedule=schedule,
+                trial_sequence=list(self.fixed_trial_sequence),
+                template_sequence=list(self.fixed_trial_sequence),
+            )
+        if self.mode == "template_sampled":
+            template_sequence = self.sample_trial_sequence(rng)
+            schedule = self.realize_from_trial_sequence(
+                template_sequence, rng, template_sequence
+            )
+            return Design(
+                experiment=self,
+                schedule=schedule,
+                trial_sequence=list(template_sequence),
+                template_sequence=list(template_sequence),
+            )
+        order = generate.order(
+            self.n_stimuli,
+            self.n_trials,
+            self.P.tolist(),
+            ordertype=self.ordertype,
+            rng=rng,
+        )
+        schedule = self.realize_flat_order(order, rng)
+        return Design(experiment=self, schedule=schedule, trial_sequence=list(order))
+
+    def export_specification(self) -> dict[str, Any]:
+        """Export the experiment specification with separated trial/event counts."""
+        if self.mode == "fixed_trials":
+            n_events = sum(
+                len(self.templates_by_id[trial["template_id"]]["events"])
+                for trial in self.trials_public
+            )
+        elif self.mode in {"flat_generated", "flat_fixed_order"}:
+            n_events = self.n_trials if self.mode == "flat_generated" else len(self.order)
+        else:
+            n_events = None
+        return {
+            "mode": self.mode,
+            "TR": self.TR,
+            "P": self.P.tolist(),
+            "C": self.C.tolist(),
+            "rho": self.rho,
+            "n_stimuli": self.n_stimuli,
+            "resolution": self.resolution,
+            "n_trials": self.n_trials,
+            "n_conceptual_trials": self.n_conceptual_trials,
+            "n_events": n_events,
+            "event_durations_requested": _display_rule(self.requested_event_durations),
+            "trial_start_interval_requested": _display_rule(
+                self.trial_start_interval_requested
+            ),
+            "post_event_interval_requested": _display_rule(
+                self.post_event_interval_requested
+            ),
+            "event_transition_interval_requested": _display_rule(
+                self.event_transition_interval_requested
+            ),
+            "inter_trial_interval_requested": _display_rule(
+                self.inter_trial_interval_requested
+            ),
+            "rest_interval_requested": _display_rule(self.rest_interval_requested),
+            "rest_every_n_trials": self.rest_every_n_trials,
+            "order": copy.deepcopy(self.order),
+            "trial_templates": _display_rule(self.trial_templates_public),
+            "trials": _display_rule(self.trials_public),
+            "trial_template_probabilities": copy.deepcopy(
+                self.trial_template_probabilities
+            ),
+            "seed": self.seed,
+        }
+
+    def specification_hash(self) -> str:
+        """Return a deterministic hash of the exported experiment specification."""
+        return hashlib.sha256(_stable_json_bytes(self.export_specification())).hexdigest()
+
+    def realize_flat_order(self, order, rng: np.random.Generator):
+        """Realize timing arrays for a classic flat one-event order."""
+        trial_start_intervals = []
+        post_event_intervals = []
+        event_durations = []
+        event_duration_rule_ids = []
+        trial_start_rule_ids = []
+        post_event_rule_ids = []
+        for code in order:
+            event_value, event_rule_id = self._sample_value(
+                self.event_duration_spec, code, "event_durations", rng
+            )
+            start_value, start_rule_id = self._sample_value(
+                self.trial_start_interval_spec, code, "trial_start_interval", rng
+            )
+            post_value, post_rule_id = self._sample_value(
+                self.post_event_interval_spec, code, "post_event_interval", rng
+            )
+            event_durations.append(event_value)
+            trial_start_intervals.append(start_value)
+            post_event_intervals.append(post_value)
+            event_duration_rule_ids.append(event_rule_id)
+            trial_start_rule_ids.append(start_rule_id)
+            post_event_rule_ids.append(post_rule_id)
+        inter_trial_intervals = []
+        inter_trial_rule_ids = []
+        rest_intervals = []
+        rest_rule_ids = []
+        for boundary in range(max(len(order) - 1, 0)):
+            value, rule_id = self._sample_value(
+                self.inter_trial_interval_spec, None, "inter_trial_interval", rng
+            )
+            inter_trial_intervals.append(value)
+            inter_trial_rule_ids.append(rule_id)
+            if (
+                self.rest_every_n_trials
+                and (boundary + 1) % self.rest_every_n_trials == 0
+            ):
+                rest_value, rest_rule_id = self._sample_value(
+                    self.rest_interval_spec, None, "rest_interval", rng
+                )
             else:
-                all_stim_durations.append(key)
+                rest_value, rest_rule_id = 0.0, _rule_id("rest_interval", "none")
+            rest_intervals.append(rest_value)
+            rest_rule_ids.append(rest_rule_id)
+        schedule = self._build_flat_schedule(
+            order=list(order),
+            event_durations=event_durations,
+            trial_start_intervals=trial_start_intervals,
+            post_event_intervals=post_event_intervals,
+            inter_trial_intervals=inter_trial_intervals,
+            rest_intervals=rest_intervals,
+            selector_provenance={
+                "event_duration_rule_ids": event_duration_rule_ids,
+                "trial_start_rule_ids": trial_start_rule_ids,
+                "post_event_rule_ids": post_event_rule_ids,
+                "inter_trial_rule_ids": inter_trial_rule_ids,
+                "rest_rule_ids": rest_rule_ids,
+                "event_transition_rule_ids": [],
+            },
+        )
+        return schedule
 
-        assert len(all_stim_durations) == len(order)
+    def _build_flat_schedule(
+        self,
+        order,
+        event_durations,
+        trial_start_intervals,
+        post_event_intervals,
+        inter_trial_intervals,
+        rest_intervals,
+        selector_provenance,
+    ):
+        """Build a schedule dictionary for flat one-event designs."""
+        T = len(order)
+        trial_ids = list(range(T))
+        event_index_within_trial = [0] * T
+        trial_template_ids = [None] * T
+        trial_type_ids = [self.category_labels[code] for code in order]
+        trial_starts = []
+        trial_ends = []
+        event_onsets = []
+        event_offsets = []
+        cursor = 0.0
+        schedule_table = []
+        for trial_idx, code in enumerate(order):
+            trial_start = cursor
+            onset = trial_start + trial_start_intervals[trial_idx]
+            offset = onset + event_durations[trial_idx]
+            trial_end = offset + post_event_intervals[trial_idx]
+            trial_starts.append(trial_start)
+            event_onsets.append(onset)
+            event_offsets.append(offset)
+            trial_ends.append(trial_end)
+            following_transition = None
+            following_inter_trial = (
+                inter_trial_intervals[trial_idx]
+                if trial_idx < len(inter_trial_intervals)
+                else None
+            )
+            following_rest = (
+                rest_intervals[trial_idx] if trial_idx < len(rest_intervals) else None
+            )
+            schedule_table.append(
+                {
+                    "run_event_index": trial_idx,
+                    "trial_id": trial_idx,
+                    "trial_index": trial_idx,
+                    "trial_template_id": None,
+                    "trial_type_id": self.category_labels[code],
+                    "event_index_within_trial": 0,
+                    "event_category": self.category_labels[code],
+                    "event_code": int(code),
+                    "trial_start": trial_start,
+                    "realized_trial_start_interval": trial_start_intervals[trial_idx],
+                    "event_onset": onset,
+                    "realized_event_duration": event_durations[trial_idx],
+                    "event_offset": offset,
+                    "realized_post_event_interval": post_event_intervals[trial_idx],
+                    "following_event_transition_interval": following_transition,
+                    "following_inter_trial_interval": following_inter_trial,
+                    "following_rest_interval": following_rest,
+                    "trial_end": trial_end,
+                    "event_duration_rule_id": selector_provenance[
+                        "event_duration_rule_ids"
+                    ][trial_idx],
+                    "trial_start_rule_id": selector_provenance["trial_start_rule_ids"][
+                        trial_idx
+                    ],
+                    "post_event_rule_id": selector_provenance["post_event_rule_ids"][
+                        trial_idx
+                    ],
+                    "event_transition_rule_id": None,
+                    "inter_trial_rule_id": (
+                        selector_provenance["inter_trial_rule_ids"][trial_idx]
+                        if trial_idx < len(inter_trial_intervals)
+                        else None
+                    ),
+                    "rest_rule_id": (
+                        selector_provenance["rest_rule_ids"][trial_idx]
+                        if trial_idx < len(rest_intervals)
+                        else None
+                    ),
+                }
+            )
+            cursor = trial_end
+            if trial_idx < len(inter_trial_intervals):
+                cursor += inter_trial_intervals[trial_idx] + rest_intervals[trial_idx]
+        return {
+            "order": order,
+            "event_categories": [self.category_labels[code] for code in order],
+            "realized_event_durations": event_durations,
+            "trial_ids": trial_ids,
+            "event_index_within_trial": event_index_within_trial,
+            "trial_template_ids": trial_template_ids,
+            "trial_type_ids": trial_type_ids,
+            "trial_start_event_index": list(range(T)),
+            "trial_end_event_index": list(range(T)),
+            "realized_trial_start_intervals": trial_start_intervals,
+            "trial_starts": trial_starts,
+            "trial_ends": trial_ends,
+            "event_onsets": event_onsets,
+            "event_offsets": event_offsets,
+            "realized_post_event_intervals": post_event_intervals,
+            "within_trial_transition_from_event_index": [],
+            "within_trial_transition_to_event_index": [],
+            "realized_event_transition_intervals": [],
+            "inter_trial_boundary_after_trial": list(range(max(T - 1, 0))),
+            "realized_inter_trial_intervals": inter_trial_intervals,
+            "realized_rest_intervals": rest_intervals,
+            "legacy_event_aligned_inter_trial": [0.0] + list(inter_trial_intervals),
+            "selector_provenance": selector_provenance,
+            "schedule_table": schedule_table,
+        }
 
-        # Add pre/post time to each trial duration
-        all_stim_durations = [d + t_pre + t_post for d in all_stim_durations]
-        return all_stim_durations
+    def realize_from_trial_sequence(
+        self, trial_sequence, rng: np.random.Generator, template_sequence=None
+    ):
+        """Realize a full event-level schedule from conceptual-trial templates."""
+        trial_sequence = list(trial_sequence)
+        order = []
+        event_categories = []
+        event_durations = []
+        trial_ids = []
+        event_index_within_trial = []
+        trial_template_ids = []
+        trial_type_ids = []
+        trial_start_event_index = []
+        trial_end_event_index = []
+        trial_start_intervals = []
+        trial_start_rule_ids = []
+        post_event_intervals = []
+        post_event_rule_ids = []
+        transition_from = []
+        transition_to = []
+        transition_intervals = []
+        transition_rule_ids = []
+        event_duration_rule_ids = []
+        event_onsets = []
+        event_offsets = []
+        trial_starts = []
+        trial_ends = []
+        schedule_table = []
+        inter_trial_intervals = []
+        inter_trial_rule_ids = []
+        rest_intervals = []
+        rest_rule_ids = []
+        cursor = 0.0
+        global_event_index = 0
+        transition_lookup: dict[tuple[int, int], float] = {}
+        transition_rule_lookup: dict[tuple[int, int], str] = {}
 
-    # Generates ITI with default first value then
-    # the order (ensures n_trials and ITI length match)
-    @staticmethod
-    def generate_iti(order, conditional_iti):
-        ITI = []
+        for trial_idx, template_id in enumerate(trial_sequence):
+            template = self.templates_by_id[template_id]
+            trial_template_ids.append(template_id)
+            trial_type_ids.append(template["trial_type"])
+            trial_start, start_rule_id = self._sample_value(
+                self.trial_start_interval_spec,
+                template["trial_type"],
+                "trial_start_interval",
+                rng,
+            )
+            trial_start_intervals.append(trial_start)
+            trial_start_rule_ids.append(start_rule_id)
+            trial_start_event_index.append(global_event_index)
+            trial_starts.append(cursor)
+            event_cursor = cursor + trial_start
+            events = template["events"]
+            for event_idx, event in enumerate(events):
+                code = int(event["code"])
+                category = event["category"]
+                duration = sample_normalized_rule(
+                    event["duration_rule"],
+                    "event_durations",
+                    rng,
+                    self.resolution,
+                )
+                duration_rule_id = _rule_id("event_durations", category)
+                post_value, post_rule_id = self._sample_value(
+                    self.post_event_interval_spec, category, "post_event_interval", rng
+                )
 
-        for i in range(len(order)):
-            stim_prev = order[i - 1] if i > 0 else None
-            stim_curr = order[i]
+                order.append(code)
+                event_categories.append(category)
+                event_durations.append(duration)
+                trial_ids.append(trial_idx)
+                event_index_within_trial.append(event_idx)
+                event_onsets.append(event_cursor)
+                event_offset = event_cursor + duration
+                event_offsets.append(event_offset)
+                post_event_intervals.append(post_value)
+                post_event_rule_ids.append(post_rule_id)
+                event_duration_rule_ids.append(duration_rule_id)
 
-            if stim_prev is not None or stim_curr is not None:
-                # Determine key for condition-based ITI
-                key = (stim_prev, stim_curr) if stim_prev is not None else "default"
-                params = conditional_iti.get(key, conditional_iti.get("default"))
+                following_transition = None
+                following_transition_rule_id = None
+                if event_idx < len(events) - 1:
+                    next_category = events[event_idx + 1]["category"]
+                    transition_value, transition_rule_id = self._sample_value(
+                        self.event_transition_interval_spec,
+                        (category, next_category),
+                        "event_transition_interval",
+                        rng,
+                    )
+                    transition_from.append(global_event_index)
+                    transition_to.append(global_event_index + 1)
+                    transition_intervals.append(transition_value)
+                    transition_rule_ids.append(transition_rule_id)
+                    transition_lookup[(trial_idx, event_idx)] = transition_value
+                    transition_rule_lookup[(trial_idx, event_idx)] = transition_rule_id
+                    following_transition = transition_value
+                    following_transition_rule_id = transition_rule_id
+                    next_event_onset = event_offset + post_value + transition_value
+                else:
+                    next_event_onset = None
 
-                # Generate ITI based on parameters
-                if params["model"] == "fixed":
-                    ITI.append(params["mean"])
-                elif params["model"] == "exponential":
-                    val = np.random.exponential(scale=params["mean"])
-                    if "min" in params:
-                        val = max(val, params["min"])
-                    if "max" in params:
-                        val = min(val, params["max"])
-                    ITI.append(val)
-                elif params["model"] == "uniform":
-                    ITI.append(np.random.uniform(params["min"], params["max"]))
-                elif params["model"] == "gaussian":
-                    mean = params.get("mean", 0)
-                    std = params.get("std", 1)
-                    val = np.random.normal(loc=mean, scale=std)
-                    if "min" in params:
-                        val = max(val, params["min"])
-                    if "max" in params:
-                        val = min(val, params["max"])
-                    ITI.append(val)
-        return ITI
+                schedule_table.append(
+                    {
+                        "run_event_index": global_event_index,
+                        "trial_id": trial_idx,
+                        "trial_index": trial_idx,
+                        "trial_template_id": template_id,
+                        "trial_type_id": template["trial_type"],
+                        "event_index_within_trial": event_idx,
+                        "event_category": category,
+                        "event_code": code,
+                        "trial_start": cursor,
+                        "realized_trial_start_interval": trial_start,
+                        "event_onset": event_cursor,
+                        "realized_event_duration": duration,
+                        "event_offset": event_offset,
+                        "realized_post_event_interval": post_value,
+                        "following_event_transition_interval": following_transition,
+                        "following_inter_trial_interval": None,
+                        "following_rest_interval": None,
+                        "trial_end": None,
+                        "event_duration_rule_id": duration_rule_id,
+                        "trial_start_rule_id": start_rule_id,
+                        "post_event_rule_id": post_rule_id,
+                        "event_transition_rule_id": following_transition_rule_id,
+                        "inter_trial_rule_id": None,
+                        "rest_rule_id": None,
+                    }
+                )
 
-    @staticmethod
-    def calculate_duration(ITI, dur):
-        """Calculate total duration from ITI and trial durations."""
-        total_sum = sum(dur)
-        total_sum = total_sum + sum(ITI)
-        return total_sum
+                if next_event_onset is not None:
+                    event_cursor = next_event_onset
+                global_event_index += 1
 
-    # Generates an order based on a given probability distribution of certain keys
-    @staticmethod
-    def sample_from_probabilities(prob, key, length):
-        # random.choices picks elements from key with weights = prob_array\
-        samples = random.choices(key, weights=prob, k=length)
-        merged = [item for sublist in samples for item in sublist]
-        return merged[:length]
+            trial_end_event_index.append(global_event_index - 1)
+            trial_end = event_offsets[-1] + post_event_intervals[-1]
+            trial_ends.append(trial_end)
+            schedule_table[-1]["trial_end"] = trial_end
+            cursor = trial_end
+
+            if trial_idx < len(trial_sequence) - 1:
+                inter_value, inter_rule_id = self._sample_value(
+                    self.inter_trial_interval_spec, None, "inter_trial_interval", rng
+                )
+                inter_trial_intervals.append(inter_value)
+                inter_trial_rule_ids.append(inter_rule_id)
+                if (
+                    self.rest_every_n_trials
+                    and (trial_idx + 1) % self.rest_every_n_trials == 0
+                ):
+                    rest_value, rest_rule_id = self._sample_value(
+                        self.rest_interval_spec, None, "rest_interval", rng
+                    )
+                else:
+                    rest_value, rest_rule_id = 0.0, _rule_id("rest_interval", "none")
+                rest_intervals.append(rest_value)
+                rest_rule_ids.append(rest_rule_id)
+                schedule_table[-1]["following_inter_trial_interval"] = inter_value
+                schedule_table[-1]["following_rest_interval"] = rest_value
+                schedule_table[-1]["inter_trial_rule_id"] = inter_rule_id
+                schedule_table[-1]["rest_rule_id"] = rest_rule_id
+                cursor += inter_value + rest_value
+
+        legacy_event_aligned_inter_trial = [0.0]
+        for trial_idx in range(len(trial_sequence)):
+            if trial_idx == 0:
+                pass
+            if trial_idx > 0:
+                legacy_event_aligned_inter_trial.extend(
+                    [0.0]
+                    * (
+                        trial_end_event_index[trial_idx]
+                        - trial_start_event_index[trial_idx]
+                        + 1
+                    )
+                )
+        legacy_event_aligned_inter_trial = [0.0] * len(order)
+        for boundary_trial_idx, inter_value in enumerate(inter_trial_intervals):
+            next_event_index = trial_start_event_index[boundary_trial_idx + 1]
+            legacy_event_aligned_inter_trial[next_event_index] = inter_value
+
+        return {
+            "order": order,
+            "event_categories": event_categories,
+            "realized_event_durations": event_durations,
+            "trial_ids": trial_ids,
+            "event_index_within_trial": event_index_within_trial,
+            "trial_template_ids": trial_template_ids,
+            "trial_type_ids": trial_type_ids,
+            "trial_start_event_index": trial_start_event_index,
+            "trial_end_event_index": trial_end_event_index,
+            "realized_trial_start_intervals": trial_start_intervals,
+            "trial_starts": trial_starts,
+            "trial_ends": trial_ends,
+            "event_onsets": event_onsets,
+            "event_offsets": event_offsets,
+            "realized_post_event_intervals": post_event_intervals,
+            "within_trial_transition_from_event_index": transition_from,
+            "within_trial_transition_to_event_index": transition_to,
+            "realized_event_transition_intervals": transition_intervals,
+            "inter_trial_boundary_after_trial": list(
+                range(max(len(trial_sequence) - 1, 0))
+            ),
+            "realized_inter_trial_intervals": inter_trial_intervals,
+            "realized_rest_intervals": rest_intervals,
+            "legacy_event_aligned_inter_trial": legacy_event_aligned_inter_trial,
+            "selector_provenance": {
+                "event_duration_rule_ids": event_duration_rule_ids,
+                "trial_start_rule_ids": trial_start_rule_ids,
+                "post_event_rule_ids": post_event_rule_ids,
+                "event_transition_rule_ids": transition_rule_ids,
+                "inter_trial_rule_ids": inter_trial_rule_ids,
+                "rest_rule_ids": rest_rule_ids,
+            },
+            "schedule_table": schedule_table,
+        }
+
+    def event_sequence_from_template_ids(self, template_sequence):
+        """Flatten a conceptual-trial template sequence into modeled event codes."""
+        sequence = []
+        for template_id in template_sequence:
+            for event in self.templates_by_id[template_id]["events"]:
+                sequence.append(int(event["code"]))
+        return sequence
 
 
 class Optimisation:
-    """Represent the population of experimental designs for fMRI.
-
-    :param experiment: The experimental setup of the fMRI experiment.
-    :type  experiment: experiment
-
-    :param G: The size of the generation
-    :type  G: integer
-
-    :param R: with which rate are the orders generated from ['blocked','random','mseq']
-    :type  R: list
-
-    :param q: percentage of mutations
-    :type  q: float
-
-    :param weights: weights attached to Fe, Fd, Ff, Fc
-    :type  weights: list
-
-    :param I: number of immigrants
-    :type  I: integer
-
-    :param preruncycles: number of prerun cycles (to find maximum Fe and Fd)
-    :type  preruncycles: integer
-
-    :param cycles: number of cycles
-    :type  cycles: integer
-
-    :param seed: seed
-    :type  seed: integer
-
-    :param Aoptimality: optimises A-optimality if true, else D-optimality
-    :type  Aoptimality: boolean
-
-    :param convergence: after how many stable iterations is there convergence
-    :type  convergence: integer
-
-    :param folder: folder to save output
-    :type  folder: string
-
-    :param outdes: number of designs to be saved
-    :type  outdes: integer
-
-    :param optimisation: The type of optimisation - 'GA' or 'simulation'
-    :type  optimisation: string
-    """
+    """Run the design search loop for a configured experiment."""
 
     def __init__(
         self,
@@ -1009,168 +2043,192 @@ class Optimisation:
         Aoptimality: bool = True,
         folder: str | Path | None = None,
         outdes: int = 3,
-        convergence: int = 1000,
+        convergence: int | None = 1000,
+        max_candidate_attempts: int = 10000,
         optimisation: str = "GA",
     ):
-
+        """Configure an optimisation run over designs sampled from an experiment."""
         self.exp = experiment
+        self.weights = weights
+        self.preruncycles = preruncycles
+        self.cycles = cycles
+        self.seed = seed or experiment.seed
+        self.I = I
         self.G = G
         self.R = [0.4, 0.4, 0.2] if R is None else R
         self.q = q
-        self.weights = weights
-        self.I = I
-        self.preruncycles = preruncycles
-        self.cycles = cycles
-        self.convergence = convergence
         self.Aoptimality = Aoptimality
-        self.outdes = outdes
         self.folder = Path(folder).absolute() if folder else None
+        self.outdes = outdes
+        self.convergence = convergence
+        if self.convergence is not None:
+            if not isinstance(self.convergence, int) or self.convergence < 0:
+                raise ValueError("convergence must be None or a non-negative integer")
+        if not isinstance(max_candidate_attempts, int) or max_candidate_attempts <= 0:
+            raise ValueError("max_candidate_attempts must be a positive integer")
+        self.max_candidate_attempts = max_candidate_attempts
         self.optimisation = optimisation
-        self.seed = seed or np.random.randint(10000)
         self.designs = []
         self.optima = []
         self.bestdesign = None
         self.cov = None
+        self._seed_counter = 0
+        self.bestscore = float("-inf")
+        self.bestdesign_generation = None
+        self.generations_completed = 0
+        self.finished = False
+        self.stop_reason = None
+        self._stagnation_generations = 0
+        self._last_candidate_failure = "candidate generation has not been attempted yet"
+        self._last_candidate_exception = None
+
+    def _next_rng(self, label: int = 0) -> np.random.Generator:
+        """Advance the optimisation RNG stream deterministically."""
+        self._seed_counter += 1
+        ss = np.random.SeedSequence([self.seed, self._seed_counter, label])
+        return np.random.default_rng(ss)
 
     def change_seed(self):
-        """Change the seed."""
+        """Increment the optimisation seed to start a fresh search trajectory."""
         self.seed = self.seed + 1000 if self.seed < 4 * 10**9 else 1
         return self
 
     def check_develop(self, design, weights=None):
-        """Check and develop a design to the population.
-
-        Function will check design against strict options and develop the design if valid.
-
-        :param design: Design to be added to population.
-        :type design:  esign object
-
-        :param weights: weights for efficiency calculation.
-        :type  weights: list of floats, summing to 1
-        """
-        # weights
-
-        if weights is None:
-            weights = self.weights
-
-        # check maxrep, hardprob, every stimulus at least once
+        """Validate and score a candidate design before keeping it."""
+        weights = self.weights if weights is None else weights
         if self.exp.maxrep is not None and not design.check_maxrep(self.exp.maxrep):
+            self._last_candidate_failure = "candidate exceeded maxrep"
+            self._last_candidate_exception = None
             return False
         if self.exp.hardprob and not design.check_hardprob():
+            self._last_candidate_failure = (
+                "candidate violated hard probability constraints"
+            )
+            self._last_candidate_exception = None
             return False
         if len(np.unique(design.order)) < self.exp.n_stimuli:
+            self._last_candidate_failure = (
+                "candidate omitted one or more stimulus categories"
+            )
+            self._last_candidate_exception = None
             return False
-
-        # develop
-
         out = design.designmatrix()
         if out is False:
+            self._last_candidate_failure = "design matrix construction failed"
+            self._last_candidate_exception = None
+            return False
+        if not (
+            np.all(np.isfinite(np.asarray(design.Xnonconv)))
+            and np.all(np.isfinite(np.asarray(design.Xconv)))
+        ):
+            self._last_candidate_failure = "design matrices contained non-finite values"
+            self._last_candidate_exception = None
             return False
         design.FCalc(
             weights, confoundorder=self.exp.confoundorder, Aoptimality=self.Aoptimality
         )
-        return False if np.isnan(design.F) else design
+        component_scores = np.array(
+            [design.Fe, design.Fd, design.Ff, design.Fc, design.F], dtype=float
+        )
+        if not np.all(np.isfinite(component_scores)):
+            self._last_candidate_failure = "candidate scores contained non-finite values"
+            self._last_candidate_exception = None
+            return False
+        self._last_candidate_failure = ""
+        self._last_candidate_exception = None
+        return design
+
+    def _raise_candidate_generation_error(self, attempts, target):
+        """Raise a bounded candidate-generation failure with the last known cause."""
+        message = (
+            f"Failed to produce {target} valid candidate design(s) after {attempts} attempts "
+            f"for mode {self.exp.mode!r}. Last failure: {self._last_candidate_failure}."
+        )
+        if self._last_candidate_exception is not None:
+            raise RuntimeError(message) from self._last_candidate_exception
+        raise RuntimeError(message)
+
+    def _make_design_from_order(self, order, rng):
+        """Create a :class:`Design` from a flat event order."""
+        schedule = self.exp.realize_flat_order(order, rng)
+        return Design(experiment=self.exp, schedule=schedule, trial_sequence=list(order))
+
+    def _make_design_from_templates(self, template_sequence, rng):
+        """Create a :class:`Design` from a conceptual-trial template sequence."""
+        schedule = self.exp.realize_from_trial_sequence(
+            template_sequence, rng, template_sequence
+        )
+        return Design(
+            experiment=self.exp,
+            schedule=schedule,
+            trial_sequence=list(template_sequence),
+            template_sequence=list(template_sequence),
+        )
 
     def add_new_designs(self, weights=None, R=None):
-        """Generate the population.
-
-        :param experiment: The experimental setup of the fMRI experiment.
-        :type experiment: experiment
-        :param weights: weights for efficiency calculation.
-        :type weights: list of floats, summing to 1
-        :param seed: The seed for random processes.
-        :type seed: integer or None
-        """
-        # weights
-        if weights is None:
-            weights = self.weights
-
+        """Populate the current generation with newly sampled candidate designs."""
+        weights = self.weights if weights is None else weights
         if not R:
             R = np.round(np.array(self.R) * self.G).tolist()
-
-        if self.exp.n_stimuli in [6, 10] and R[2] > 0:
-            warnings.warns(
-                "for this number of conditions/stimuli, "
-                "there are no msequences possible.\n"
-                "Replaced by random designs."
-            )
-            R[1] = R[1] + R[2]
-            R[2] = 0
-
+        target = int(np.sum(R))
         NDes = 0
-        self.change_seed()
-
-        while NDes < np.sum(R):
-            self.change_seed()
-            ind = np.sum(NDes >= np.cumsum(R))
+        attempts = 0
+        while NDes < target:
+            if attempts >= self.max_candidate_attempts:
+                self._raise_candidate_generation_error(attempts, target - NDes)
+            attempts += 1
+            rng = self._next_rng(100 + NDes)
+            ind = int(np.sum(NDes >= np.cumsum(R)))
             ordertype = ["blocked", "random", "msequence"][ind]
-
-            # --- Sample order ---
-            order = None
-
-            if self.exp.order_fixed:
-                order = self.exp.order
-            elif self.exp.order_probabilities is None:
-                order = generate.order(
-                    self.exp.n_stimuli,
-                    self.exp.n_trials,
-                    self.exp.P,
-                    ordertype=ordertype,
-                    seed=self.seed,
+            try:
+                if self.exp.mode == "flat_fixed_order":
+                    des = self._make_design_from_order(self.exp.order, rng)
+                elif self.exp.mode == "fixed_trials":
+                    des = self._make_design_from_templates(
+                        self.exp.fixed_trial_sequence, rng
+                    )
+                elif self.exp.mode == "template_sampled":
+                    template_sequence = self.exp.sample_trial_sequence(rng)
+                    des = self._make_design_from_templates(template_sequence, rng)
+                else:
+                    order = generate.order(
+                        self.exp.n_stimuli,
+                        self.exp.n_trials,
+                        self.exp.P.tolist(),
+                        ordertype=ordertype,
+                        rng=rng,
+                    )
+                    des = self._make_design_from_order(order, rng)
+            except Exception as exc:
+                self._last_candidate_failure = (
+                    "candidate construction raised an exception"
                 )
-            else:
-                order = Experiment.sample_from_probabilities(
-                    self.exp.order_probabilities,
-                    self.exp.order_keys,
-                    self.exp.order_length,
-                )
-
-            # --- Sample ITI ---
-            ITI = []
-            if self.exp.conditional_ITI is None:
-                ITI, ITIlam = generate.iti(
-                    ntrials=self.exp.n_trials,
-                    model=self.exp.ITImodel,
-                    min=self.exp.ITImin,
-                    max=self.exp.ITImax,
-                    mean=self.exp.ITImean,
-                    lam=self.exp.ITIlam,
-                    seed=self.seed,
-                    resolution=self.exp.resolution,
-                )
-                if ITIlam:
-                    self.exp.ITIlam = ITIlam
-            else:
-                ITI = Experiment.generate_iti(order, self.exp.conditional_ITI)
-
-            # --- Sample per-trial stimulus durations (if variable) ---
-            all_stim_durations = None
-            if self.exp.stimuli_durations is not None:
-                all_stim_durations = Experiment.sample_stim_durations(
-                    order,
-                    self.exp.stimuli_durations,
-                    self.exp.t_pre,
-                    self.exp.t_post,
-                )
-
-            # --- Create Design with the ONE shared Experiment ---
-            des = Design(
-                order=order,
-                ITI=np.array(ITI),
-                experiment=self.exp,
-                all_stim_durations=all_stim_durations,
-            )
-
+                self._last_candidate_exception = exc
+                continue
             fulldes = self.check_develop(des, weights)
-
             if fulldes is False:
                 continue
             self.designs.append(fulldes)
             NDes += 1
-
         return self
 
     def _clean_designs(self, weights):
+        """Remove duplicate designs and backfill the population if needed."""
+        if len(self.designs) <= 1:
+            return self
+        if self.exp.mode in {"fixed_trials", "template_sampled"}:
+            seen = {}
+            keep = []
+            for idx, des in enumerate(self.designs):
+                key = tuple(des.order)
+                if key not in seen:
+                    seen[key] = idx
+                    keep.append(des)
+            removed = len(self.designs) - len(keep)
+            self.designs = keep
+            if removed > 0:
+                self.add_new_designs(R=[0, removed, 0], weights=weights)
+            return self
         n = 0
         rm = 0
         while n == 0:
@@ -1187,165 +2245,123 @@ class Optimisation:
                     ind = np.where(isone)
                     remove = ind[1][ind[0] == ind[0][0]]
                     self.designs = [
-                        des for ind, des in enumerate(self.designs) if ind not in remove
+                        des for idx, des in enumerate(self.designs) if idx not in remove
                     ]
-                    rm = rm + len(remove)
-
-        self.add_new_designs(R=[0, rm, 0], weights=weights)
-
+                    rm += len(remove)
+        if rm > 0:
+            self.add_new_designs(R=[0, rm, 0], weights=weights)
         return self
 
     def _mutation(self, weights, seed):
-        # Mutation:
-        # if: Best design: stay untouched
-        # elif Correlation between all is > 0.8: mutate with 20% mutations
-        # else: mutate with 5% mutations
-        # for all: if conditions are not fulfilled: not mutated
-
+        """Apply mutation to the current generation."""
         signals = [x.Xconv for x in self.designs]
         efficiencies = [x.F for x in self.designs]
-
         cors = self.pearsonr(signals, self.exp.n_stimuli)
         mncor = np.mean(cors)
-
         for idx in range(len(self.designs)):
             design = self.designs[idx]
-
             if design.F == np.max(efficiencies):
                 offspring = design
-
             elif mncor > 0.6:
                 offspring = design.mutation(0.2, seed=seed)
                 offspring = self.check_develop(offspring, weights)
-
             else:
                 offspring = design.mutation(self.q, seed=seed)
                 offspring = self.check_develop(offspring, weights)
-
-            if offspring is False:
-                continue
-            else:
+            if offspring is not False:
                 self.designs[idx] = offspring
-
         return self
 
     def _crossover(self, weights, seed):
-        # select designs with F>median(F):
+        """Apply crossover to parent pairs in the current generation."""
         crossind = range(len(self.designs))
-
         nparents = len(crossind)
         npairs = int(nparents / 2.0)
-
-        np.random.seed(seed)
-        CouplingRnd = np.random.choice(nparents, size=(npairs * 2), replace=False)
-        CouplingRnd = [crossind[x] for x in CouplingRnd]
-        CouplingRnd = [
-            [CouplingRnd[i], CouplingRnd[i + 1]] for i in np.arange(0, npairs * 2, 2)
-        ]
-
-        count = 0
-
-        for couple in CouplingRnd:
+        rng = np.random.default_rng(seed)
+        coupling = rng.choice(nparents, size=(npairs * 2), replace=False)
+        coupling = [crossind[x] for x in coupling]
+        pairing = [[coupling[i], coupling[i + 1]] for i in np.arange(0, npairs * 2, 2)]
+        for couple in pairing:
             baby1, baby2 = self.designs[couple[0]].crossover(
                 self.designs[couple[1]], seed=seed
             )
             for baby in [baby1, baby2]:
                 baby = self.check_develop(baby, weights)
-                if baby is False:
-                    continue
-                self.designs.append(baby)
-                count = count + 1
-
+                if baby is not False:
+                    self.designs.append(baby)
         return self
 
     def _immigration(self, weights, noim):
+        """Inject newly sampled designs into the current generation."""
         R = np.ceil(np.array(self.R) * noim).tolist()
         self.add_new_designs(R=R, weights=weights)
-
         return self
 
     def to_next_generation(self, weights=None, seed=1234, optimisation=None):
-        """Go from one generation to the next.
-
-        :param weights: weights for efficiency calculation.
-        :type weights: list of floats, summing to 1
-
-        :param seed: The seed for random processes.
-        :type seed: integer or None
-
-        :param optimisation: The type of optimisation - 'GA' or 'simulation'
-        :type optimisation: string
-        """
-        if optimisation is None:
-            optimisation = self.optimisation
-
-        # weights
-        if weights is None:
-            weights = self.weights
-
-        # Skip crossover/mutation when order is fixed
-        if not self.exp.order_fixed:
+        """Advance one generation of the configured search strategy."""
+        weights = self.weights if weights is None else weights
+        optimisation = self.optimisation if optimisation is None else optimisation
+        if self.exp.mode not in {"flat_fixed_order", "fixed_trials"}:
             self._clean_designs(weights)
             if optimisation == "GA":
                 self._mutation(weights, seed)
                 self._crossover(weights, seed)
                 self._immigration(weights, noim=self.I)
-
             elif optimisation == "simulation":
                 self._immigration(weights, noim=self.I)
-            else:
-                print("Unknown optimisation type")
         else:
             self._immigration(weights, noim=self.I)
 
-        # inspect efficiencies
         efficiencies = [x.F for x in self.designs]
         maximum = np.max(efficiencies)
         self.optima.append(maximum)
         bestind = [ind for ind, val in enumerate(efficiencies) if val == maximum][0]
-        self.bestdesign = self.designs[bestind]
-
-        # append best designs to lists
-
-        # check convergence
+        generation_best = self.designs[bestind]
         gen = len(self.optima)
-        if gen > 1000 and self.optima[-1] > self.optima[gen - 1000]:
+        self.generations_completed = gen
+        if self.bestdesign is None or maximum > self.bestscore:
+            self.bestscore = float(maximum)
+            self.bestdesign = generation_best
+            self.bestdesign_generation = gen
+            self._stagnation_generations = 0
+        else:
+            self._stagnation_generations += 1
+        convergence_limit = self.convergence
+        if convergence_limit in {0, None}:
+            self.finished = False
+            self.stop_reason = None
+        elif self._stagnation_generations >= convergence_limit:
             self.finished = True
-
-        # select best G
-        cutoff = np.sort(efficiencies)[::-1][self.G]
-        self.designs = [des for des in self.designs if des.F >= cutoff]
-
+            self.stop_reason = (
+                "no improvement in generation-best score for "
+                f"{convergence_limit} consecutive generation(s)"
+            )
+        if len(self.designs) > self.G:
+            cutoff = np.sort(efficiencies)[::-1][self.G]
+            self.designs = [des for des in self.designs if des.F >= cutoff]
         return self
 
     def clear(self):
-        """Clear results between optimisations (maximum Fe, Fd or opt)."""
+        """Reset the current population while preserving the last best design."""
+        previous_best = self.bestdesign
         self.designs = []
         self.optima = []
         self.finished = False
-        self.change_seed()
-
-        if self.bestdesign:
-            bestdes = Design(
-                order=self.bestdesign.order,
-                ITI=self.bestdesign.ITI,
-                experiment=self.exp,
-                all_stim_durations=self.bestdesign.all_stim_durations,
-            )
-            bestdes = self.check_develop(bestdes)
-            if bestdes is not False:
-                self.designs.append(bestdes)
-            self.bestdesign = None
-
+        self.stop_reason = None
+        self.bestdesign = None
+        self.bestscore = float("-inf")
+        self.bestdesign_generation = None
+        self.generations_completed = 0
+        self._stagnation_generations = 0
+        if previous_best:
+            self.designs.append(previous_best)
         return self
 
     def optimise(self):
-        """Run design optimization."""
+        """Run the full optimisation procedure, including normalization passes."""
         if self.exp.FcMax == 1 and self.exp.FfMax == 1:
             self.exp.max_eff()
-
         if self.exp.FeMax == 1 and self.weights[0] > 0:
-            # add new designs
             self.clear()
             self.add_new_designs(weights=[1, 0, 0, 0])
             with progress_bar(text="Optimizing") as progress:
@@ -1356,9 +2372,8 @@ class Optimisation:
                     self.to_next_generation(seed=self.seed, weights=[1, 0, 0, 0])
                     progress.update(task, advance=1)
                     if self.finished:
-                        continue
-            self.exp.FeMax = np.max(self.bestdesign.F)
-
+                        break
+            self.exp.FeMax = float(np.max(self.bestdesign.F))
         if self.exp.FdMax == 1 and self.weights[1] > 0:
             self.clear()
             self.add_new_designs(weights=[0, 1, 0, 0])
@@ -1370,14 +2385,10 @@ class Optimisation:
                     self.to_next_generation(seed=self.seed, weights=[0, 1, 0, 0])
                     progress.update(task, advance=1)
                     if self.finished:
-                        continue
-            self.exp.FdMax = np.max(self.bestdesign.F)
-
-        # clear all attributes
+                        break
+            self.exp.FdMax = float(np.max(self.bestdesign.F))
         self.clear()
         self.add_new_designs()
-
-        # loop
         with progress_bar(text="Optimizing") as progress:
             task = progress.add_task(
                 description="optimize", total=len(range(self.cycles))
@@ -1386,12 +2397,27 @@ class Optimisation:
                 self.to_next_generation(seed=self.seed)
                 progress.update(task, advance=1)
                 if self.finished:
-                    continue
-
+                    break
         return self
 
+    def selected_design(self, rank: int = 0):
+        """Return one evaluated representative design from the current selected outputs."""
+        if self.bestdesign is None or not self.designs:
+            raise RuntimeError(
+                "selected_design() requires optimise() to run before selecting outputs"
+            )
+        if not hasattr(self, "out"):
+            self.evaluate()
+        if rank < 0 or rank >= len(self.out):
+            raise IndexError(f"selected design rank {rank} is out of range")
+        return self.designs[self.out[rank]]
+
     def evaluate(self):
-        # select designs: best from k-means clusters
+        """Cluster final designs and choose representative reported outputs."""
+        if self.bestdesign is None or not self.designs:
+            raise RuntimeError(
+                "evaluate() requires optimise() to run before selecting outputs"
+            )
         shape = self.bestdesign.Xconv.shape
         des = np.zeros([np.prod(shape), len(self.designs)])
         efficiencies = np.array([x.F for x in self.designs])
@@ -1402,92 +2428,72 @@ class Optimisation:
             des[:, d] = hrf
         clus = sklearn.cluster.k_means(des.T, self.outdes, random_state=self.seed)[1]
         out = []
-        des = []
-        cl = []
+        new_designs = []
+        clusters = []
         first = 0
         for c in range(self.outdes):
             ids = np.where(clus == c)[0]
             id_ordered = ids[np.flipud(np.argsort(efficiencies[ids]))]
             out.append(first)
             for d in id_ordered:
-                cl.append(c)
-                des.append(self.designs[d])
-                first = first + 1
-        self.designs = des
+                clusters.append(c)
+                new_designs.append(self.designs[d])
+                first += 1
+        self.designs = new_designs
         self.out = out
-        self.clus = cl
-
+        self.clus = clusters
         signals = [x.Xconv for x in self.designs]
-        co = self.pearsonr(signals, 3)
-        self.cov = co
-
+        self.cov = self.pearsonr(signals, self.exp.n_stimuli)
         return self
 
     def download(self):
+        """Write report artifacts, schedule exports, and onset files to disk."""
         if not self.folder:
             raise ValueError("No folder defined to download output.")
-
         if self.cov is None:
             self.evaluate()
-
-        # empty folder
         if self.folder.exists():
             files = self.folder.glob("**/design_*")
             for f in files:
                 shutil.rmtree(f)
         else:
             self.folder.mkdir(parents=True, exist_ok=True)
-
         reportfile = "report.pdf"
         report.make_report(self, self.folder / reportfile)
-
         files = []
-
         for des in range(self.outdes):
-
-            (self.folder / f"design_{str(des)}").mkdir(parents=True)
-
+            (self.folder / f"design_{str(des)}").mkdir(parents=True, exist_ok=True)
             design = self.designs[self.out[des]]
-
             for stim in range(self.exp.n_stimuli):
-
                 onsetsfile = Path(f"design_{str(des)}") / f"stimulus_{str(stim)}.txt"
-
                 onsubsets = [
                     str(x)
-                    for x in np.array(design.onsets)[np.array(design.order) == stim]
+                    for x in np.array(design.event_onsets)[np.array(design.order) == stim]
                 ]
                 with open(self.folder / onsetsfile, "w+") as f:
                     for line in onsubsets:
                         f.write(line)
                         f.write("\n")
                 files.append(onsetsfile)
-
-            itifile = Path(f"design_{str(des)}") / "ITIs.txt"
-
-            with open(self.folder / itifile, "w+") as f:
-                for line in design.ITI:
-                    f.write(str(line))
-                    f.write("\n")
-            files.append(itifile)
-
-        files.append(reportfile)
-
-        # zip up
+            export_path = self.folder / f"design_{str(des)}" / "event_schedule.json"
+            export_path.write_text(
+                json.dumps(design.export_payload(), indent=2, default=str),
+                encoding="utf-8",
+            )
+            files.append(Path(f"design_{str(des)}") / "event_schedule.json")
+        files.append(Path(reportfile))
         zip_subdir = "OptimalDesign"
         self.zip_filename = f"{zip_subdir}.zip"
         self.file = BytesIO()
         zf = zipfile.ZipFile(self.file, "w")
-
         for fpath in files:
             zf.write(self.folder / fpath, Path(zip_subdir) / fpath)
-
         zf.close()
-
         return self
 
     @staticmethod
     def pearsonr(signals, nstim):
+        """Compute pairwise mean regressor correlations between candidate designs."""
         varcov = np.zeros([len(signals), len(signals)])
         for sig1 in range(len(signals)):
             for sig2 in range(sig1, len(signals)):
@@ -1497,29 +2503,3 @@ class Optimisation:
                 varcov[sig1, sig2] = np.mean(cors)
                 varcov[sig2, sig1] = np.mean(cors)
         return varcov
-
-
-def _find_new_resolution(TR, res):
-    n = TR * 1000.0
-    # find divisors of TR*1000
-    large_divisors = []
-    for i in range(1, int(math.sqrt(n) + 1)):
-        if n % i == 0:
-            large_divisors.append(i)
-            if i * i != n:
-                large_divisors.append(int(n / i))
-    sorted = np.sort(large_divisors)
-    # closest to res
-    resdivisor = TR / float(res)
-    difs = np.abs(resdivisor - sorted)
-    minind = np.where(difs == np.min(difs))[0]
-    divisor = sorted[minind][0]
-    newres = TR / divisor
-    return newres
-
-
-def _round_to_resolution(inmat, res):
-    out = res * np.floor(np.array(inmat) / res)
-    ind = out / res
-    ind = [int(x) for x in ind]
-    return out, ind

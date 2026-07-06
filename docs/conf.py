@@ -1,6 +1,7 @@
 """Sphinx configuration for neurodesign-plus documentation."""
 
 import importlib.metadata
+import os
 
 # -- Project information -----------------------------------------------------
 project = "neurodesign-plus"
@@ -63,6 +64,9 @@ intersphinx_mapping = {
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
     "sklearn": ("https://scikit-learn.org/stable/", None),
 }
+if os.environ.get("NEURODESIGN_DOCS_OFFLINE") == "1":
+    extensions = [ext for ext in extensions if ext != "sphinx.ext.intersphinx"]
+    intersphinx_mapping = {}
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "furo"

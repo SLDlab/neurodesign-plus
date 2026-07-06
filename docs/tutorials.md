@@ -1,36 +1,35 @@
 # Tutorials
 
-Interactive Jupyter notebook tutorials are available in the
-[tutorials/ directory](https://github.com/SLDlab/neurodesign-plus/tree/master/tutorials)
-of the repository.
+The maintained tutorial surface contains 11 notebooks.
+They are regenerated from `validation/helpers/regenerate_v2_notebooks.py` and executed from clean kernels during validation.
 
-## Overview Tutorials
+## Maintained Notebook Inventory
 
-| # | Tutorial | Description |
-|---|---------|-------------|
-| 1 | [Base Overview](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/tutorial_1-neurodesign_base_overview.ipynb) | Introduction to the core neurodesign workflow |
-| 2 | [Comparing Designs Across Experiments](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/tutorial_2-comparing_designs_across_experiments.ipynb) | Comparing designs across diverse experiment definitions |
-| 3 | [Progressive Experiment Building](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/tutorial_3-progressive_experiment_building.ipynb) | Build event-level designs progressively from simple to complex task structures |
+| Notebook | Focus |
+|---|---|
+| `tutorials/tutorial_1-neurodesign_base_overview.ipynb` | Cases 1 and 2: flat one-event shorthand and fixed conceptual trials |
+| `tutorials/tutorial_2-comparing_designs_across_experiments.ipynb` | Comparison workbook for requested versus realized timing |
+| `tutorials/tutorial_3-progressive_experiment_building.ipynb` | Canonical integrated Case 10 workflow |
+| `tutorials/base_functions/tutorial_base-comparing_designs.ipynb` | Case 3: comparing conceptual-trial counts, event counts, and realized schedules |
+| `tutorials/base_functions/tutorial_base-designing_scoring_and_optimizing.ipynb` | Case 4: scoring and patience-based stopping semantics |
+| `tutorials/base_functions/tutorial_base-discovering_best_design.ipynb` | Case 5: authoritative design retrieval through `selected_design(0)` |
+| `tutorials/base_functions/tutorial_base-optimizing_and_reporting.ipynb` | Case 6: report generation and reconstructable exports |
+| `tutorials/new_functions/tutorial_new-event_and_trial_intervals.ipynb` | Case 7: within-trial versus between-trial interval roles |
+| `tutorials/new_functions/tutorial_new-fixed_ordering.ipynb` | Case 8: fixed conceptual-trial sequences and no-optimization routes |
+| `tutorials/new_functions/tutorial_new-probabilistic_ordering.ipynb` | Case 9: complete-template sampling |
+| `tutorials/new_functions/tutorial_new-variable_event_durations.ipynb` | Event-duration rules and `Xnonconv` occupancy |
 
-## Base Function Tutorials
+## Workflow Rules Taught Consistently
 
-| # | Tutorial | Description |
-|---|---------|-------------|
-| 4 | [Designing, Scoring, and Optimising](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/base_functions/tutorial_base-designing_scoring_and_optimizing.ipynb) | Core workflow: designing, scoring, and optimising |
-| 5 | [Comparing Designs](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/base_functions/tutorial_base-comparing_designs.ipynb) | Side-by-side design comparison |
-| 6 | [Discovering Best Design](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/base_functions/tutorial_base-discovering_best_design.ipynb) | Finding the optimal design |
-| 7 | [Optimising and Reporting](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/base_functions/tutorial_base-optimizating_and_reporting.ipynb) | Running optimisation and generating reports |
+The maintained notebooks teach these public version-2 rules consistently:
 
-## New Feature Tutorials
+- use `Experiment` to declare the requested specification
+- use `create_design(...)` or `create_manual_design(...)` for no-search workflows
+- use `Optimisation` only when search is needed
+- retrieve the authoritative design with `selected_design(0)` after `optimise()`
+- generate reports and exports from that selected design workflow
+- distinguish `n_conceptual_trials` from flattened `n_events`
+- treat `Fe` and `Fd` as realized design-matrix metrics
+- treat `Ff` and `Fc` as flattened event-axis metrics
 
-| # | Tutorial | Description |
-|---|---------|-------------|
-| 8 | [Controlled Probabilistic Ordering with Event Templates](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/new_functions/tutorial_new-probabilistic_ordering.ipynb) | Sample event-level orders from probabilistic motifs rather than single-event draws |
-| 9 | [Fixed Stimulus Order: Optimize Timing Without Changing the Task Sequence](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/new_functions/tutorial_new-fixed_ordering.ipynb) | Keep the event sequence fixed while optimisation focuses on timing |
-| 10 | [Transition-Specific ITIs with `conditional_ITI`](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/new_functions/tutorial_new-conditional_ITI.ipynb) | Use transition-dependent ITI distributions keyed by `(previous_event, current_event)` |
-| 11 | [Variable Stimulus Durations with `stimuli_durations`](https://github.com/SLDlab/neurodesign-plus/blob/master/tutorials/new_functions/tutorial_new-varied_stimuli_durations.ipynb) | Assign fixed or distribution-based durations per stimulus class |
-
-:::{tip}
-To run these notebooks locally, install the package in development mode and register the
-Jupyter kernel. See the [installation guide](installation.md) for details.
-:::
+Notebook execution is automated through `validation.execute_notebooks` and covered by the aggregate validation runner in `validation.run_all`.

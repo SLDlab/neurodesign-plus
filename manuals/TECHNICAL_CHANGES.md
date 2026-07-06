@@ -1,155 +1,199 @@
-# Technical Documentation: Refactoring Details
+# Technical Changes In 2.0
 
-This document outlines the specific internal modifications made to `classes.py` in `neurodesign-plus`. It focuses on the new class variables, helper methods, and behavior changes in the `Design`, `Experiment`, and `Optimisation` classes.
+## Authoritative Implementation
 
----
+Version 2.0 keeps the public classes:
 
-## Architecture Overview
+- `Experiment`
+- `Design`
+- `Optimisation`
 
-The refactored code preserves a strict separation between the **Experiment** and the **Design**:
+The authoritative implementation lives in [neurodesign/classes.py](../neurodesign/classes.py).
+Both public import paths resolve to those same class objects:
 
-- **Experiment** stores the fixed specification of the task container: HRF settings, whitening matrix inputs, ITI summaries, and duration specifications.
-- **Design** stores one concrete sampled realization: event order, ITIs, and optionally per-event sampled stimulus durations.
+```python
+from neurodesign import Experiment, Design, Optimisation
+from neurodesign.classes import Experiment, Design, Optimisation
+```
 
-This separation is important because all designs in a population share the same experiment container and therefore the same whitening matrix. That keeps raw Fe and Fd values comparable across designs generated within that experiment.
+## Trial-Aware Normalization
 
----
+`Experiment` now normalizes three construction modes:
 
-## 1. Added Class Variables
+- flat one-event shorthand
+- fixed complete trial-template sequences
+- probabilistic complete-template sampling
 
-### **Design Class**
+For template modes, the implementation separates:
 
-* **`all_stim_durations`** `(list of floats or None)`
-    * Concrete per-trial stimulus durations for this design, including `t_pre` and `t_post`.
-    * `None` when all stimuli share the same `stim_duration`.
-    * When set, `designmatrix()` uses these per-trial values instead of `experiment.stim_duration`.
-    * Sampled via `Experiment.sample_stim_durations()` and passed at construction: `Design(order=..., ITI=..., experiment=..., all_stim_durations=...)`.
+- template definitions
+- realized trial instances
+- flattened modeled events
 
-### **Experiment Class**
+Normalization establishes:
 
-* **`stimuli_durations`** `(list of int/float or dicts, or None)`
-    * A specification template -- one entry per stimulus -- defining how to sample each stimulus's duration.
-    * Each entry is either a scalar (fixed duration) or a dict specifying a distribution:
-        ```python
-        stimuli_durations = [
-            {"model": "fixed", "mean": 1.0},
-            {"model": "exponential", "mean": 2.0, "min": 1.0, "max": 5.0},
-            1.5,
-        ]
-        ```
-    * Length must equal `n_stimuli`.
-    * Requires `trial_max` to be specified.
-    * If not provided, all stimuli use the original `stim_duration`.
+- `n_conceptual_trials`
+- template IDs
+- trial types
+- event categories and event codes
+- event-, trial-, within-trial-transition-, and between-trial cardinalities
 
-* **`conditional_ITI`** `(dict or None)`
-    * Specification for transition-dependent ITI distributions.
-    * Keys are `(prev_stim, curr_stim)` tuples or `"default"`.
-    * Values are dicts with `"model"`, `"mean"`, and optional `"min"`, `"max"`, `"std"`.
-    * Example:
-        ```python
-        conditional_ITI = {
-            (0, 1): {"model": "exponential", "mean": 2, "min": 1},
-            (1, 2): {"model": "fixed", "mean": 4},
-            "default": {"model": "exponential", "mean": 3, "min": 1},
-        }
-        ```
+Version 2.0 does not truncate templates to fit an event budget.
+Probabilistic template mode samples whole conceptual trials only.
 
-* **`order`** `(list of ints or None)`
-    * A user-provided fixed event order.
-    * When provided, `order_fixed` is set to `True`.
-    * The order is preserved across all designs during optimization -- crossover and mutation do not modify it.
+## Timing-Rule Parsing
 
-* **`trial_max`** `(float)`
-    * The maximum raw stimulus duration across all conditions.
-    * Required when `stimuli_durations` is provided.
-    * Used to compute the experiment container's `trial_duration = trial_max + t_pre + t_post`.
+All public timing components share one parser:
 
-#### **Sequence Generation Variables**
+- `event_durations`
+- `trial_start_interval`
+- `post_event_interval`
+- `event_transition_interval`
+- `inter_trial_interval`
+- `rest_interval`
 
-* **`order_keys`** `(list of integer lists)` -- Sequences sampled as units.
-* **`order_probabilities`** `(list of floats)` -- Probabilities for each key.
-* **`order_length`** `(int)` -- Requested length of the final event-level order.
+Supported rule forms are:
 
-These three are inputs for `sample_from_probabilities()`. When `order_probabilities` is provided, the optimizer generates event orders by sampling from these sequence templates rather than using the original blocked, random, or m-sequence generators. Internally, the sampled templates are flattened and then truncated to the first `order_length` events.
+- scalar shorthand
+- explicit `{"model": ...}` rules
+- selector wrappers such as `by_event_category`, `by_trial_type`, and `by_event_transition`
 
----
+Normalization converts those public forms into canonical internal rule objects before any schedule is realized.
 
-## 2. New Functions
+## Requested, Normalized, And Realized State
 
-### **Experiment Class (all `@staticmethod`)**
+Version 2.0 keeps three separate timing layers:
 
-* **`sample_stim_durations(order, stimuli_durations, t_pre, t_post)`** -> `list[float]`
-    * Samples concrete per-trial stimulus durations for a given order, using the specifications in `stimuli_durations`.
-    * Adds `t_pre + t_post` to each sampled duration.
-    * Supports `"fixed"`, `"exponential"`, `"uniform"`, and `"gaussian"` models, as well as scalar values.
+1. requested public specifications on `Experiment`
+2. normalized internal rules on `Experiment`
+3. realized occurrence-level values on `Design`
 
-* **`generate_iti(order, conditional_iti)`** -> `list[float]`
-    * Samples a concrete ITI array from a transition-dependent ITI specification.
-    * Uses the `"default"` key for the first event and for any transition not explicitly listed.
-    * Supports `"fixed"`, `"exponential"`, `"uniform"`, and `"gaussian"` models.
-    * Returns a list of length `len(order)`.
+`Experiment.export_specification()` preserves the requested surface.
+`Design.export_payload()` preserves the realized schedule, realized timing arrays, metrics, and counts.
 
-* **`calculate_duration(ITI, dur)`** -> `float`
-    * Computes total duration as the sum of all ITIs and all trial durations.
+## Bounded Distribution Semantics
 
-* **`sample_from_probabilities(prob, key, length)`** -> `list`
-    * Samples templates from `key` with weights `prob`.
-    * Flattens the sampled templates into one event-level order.
-    * Returns the first `length` events from that flattened order.
-    * Because the final list is truncated to `length`, the last sampled template can be cut at the tail when templates have different lengths.
+Uniform, exponential, and Gaussian timing rules now use one common validation and sampling path.
 
----
+Important behavior changes:
 
-## 3. Modified Functions
+- bounded exponential rules use a true truncated exponential
+- bounded Gaussian rules use a true truncated normal
+- bounded means are interpreted as the mean of the realized bounded distribution
+- values are rounded once to the experiment resolution
 
-### **Design Class**
+The implementation no longer depends on draw-then-clip behavior.
 
-* **`__init__(self, order, ITI, experiment, onsets=None, all_stim_durations=None)`**
-    * Added `all_stim_durations` for per-trial variable stimulus durations.
+## RNG Architecture
 
-* **`designmatrix(self)`**
-    * Added support for variable stimulus durations via `self.all_stim_durations`.
-    * When set, onset computation and design matrix construction use per-trial durations instead of a single shared `stim_duration`.
-    * Returns `False` if the design's actual timing exceeds the experiment container.
+Version 2.0 uses deterministic NumPy `SeedSequence` and `Generator` objects throughout:
 
-* **`crossover(self, other, seed)`**
-    * Added fixed-order support: when `order_fixed=True`, offspring inherit the parent orders unchanged.
-    * When `stimuli_durations` is set and the order changes, per-trial durations are re-sampled to match the new order.
-    * When `order_fixed=True`, per-trial durations are inherited.
+- design realization
+- template sampling
+- duration sampling
+- interval sampling
+- mutation
+- crossover
+- immigration
 
-* **`mutation(self, q, seed)`**
-    * Added fixed-order support: mutation only changes the order when `order_fixed=False` and `order_probabilities is None`.
-    * Uses the same per-trial duration propagation logic as crossover.
+The package does not rely on Python `random.choices` or global NumPy reseeding.
 
-### **Experiment Class**
+## Schedule Representation
 
-* **`countstim(self)`**
-    * Computes the container duration from expected values: `n_trials x (trial_duration + ITImean)`.
-    * This behavior is kept even when `stimuli_durations` is set, so the whitening matrix dimensions stay stable across all designs in a population.
+`Design` now stores a realized trial-aware schedule with explicit metadata, including:
 
-* **`max_eff(self)`**
-    * Computes `FcMax` and `FfMax` from a null design built inside the shared experiment container.
-    * The current implementation does not estimate `FeMax` or `FdMax` inside `max_eff()`.
+- flattened event `order`
+- event categories
+- realized event durations
+- trial IDs
+- event index within each trial
+- trial template IDs
+- trial type IDs
+- realized trial-start intervals
+- realized post-event intervals
+- realized within-trial transition intervals
+- realized between-trial intervals
+- realized rest intervals
+- event onsets and offsets
+- trial starts and ends
 
-### **Optimisation Class**
+Rests remain boundary intervals.
+They are not modeled as synthetic events.
 
-* **`add_new_designs(self, weights, R)`**
-    * Added order sampling paths:
-      `fixed order -> self.exp.order`
-      `probability-based order -> Experiment.sample_from_probabilities()`
-      `default -> generate.order()`
-    * Added ITI sampling paths:
-      `conditional_ITI -> Experiment.generate_iti()`
-      `default -> generate.iti()`
-    * Added per-design sampling of stimulus durations when `stimuli_durations` is set.
-    * Keeps all generated designs attached to one shared experiment object.
+## Trial-Boundary-Aware Optimization
 
-* **`clear(self)`**
-    * Propagates `all_stim_durations` when preserving the best design across generation clears.
+`Optimisation` now respects the schedule construction mode:
 
-* **`optimise(self)`**
-    * Skips Fe/Fd calibration pre-runs when the corresponding weight is zero or when the user has provided explicit FeMax/FdMax values.
+- flat mode mutates and crosses event orders
+- fixed template mode preserves the fixed conceptual-trial sequence
+- probabilistic template mode mutates and crosses at conceptual-trial boundaries
 
-* **`to_next_generation(self, weights, seed, optimisation)`**
-    * When `order_fixed=True`, skips mutation and crossover and uses immigration only.
-    * This focuses optimization on timing and other non-order parameters.
+After any sequence change, the package resamples the timing state needed for the new sequence, rebuilds the schedule, and recalculates the design matrices and objective metrics.
+
+## Public Selection Workflow
+
+The authoritative public route is:
+
+```python
+optimisation.optimise()
+design = optimisation.selected_design(0)
+```
+
+`selected_design(rank)` retrieves the clustered output representatives created by `evaluate()`.
+Calling `selected_design()` before `optimise()` raises a runtime error.
+Out-of-range ranks raise `IndexError`.
+
+User-facing workflows should not rely on:
+
+- `.bestdesign`
+- direct population indexing
+- re-sorting internal design pools
+
+## Patience-Based Early Stopping
+
+`Optimisation(convergence=k)` implements patience-based early stopping.
+
+- `k > 0`: stop after `k` consecutive completed generations without strict improvement in the generation-best objective score
+- `k in {0, None}`: disable early stopping
+- equality counts as no improvement
+- there is no minimum-delta tolerance in the current implementation
+
+The public optimization state records:
+
+- `generations_completed`
+- `stop_reason`
+- `optima`
+- `bestdesign_generation`
+
+## Reports And Export Payloads
+
+Version 2.0 reporting and export surfaces now align around the selected design workflow.
+
+Reports are generated from the `Optimisation` instance.
+Exports preserve enough information to reconstruct the selected schedule:
+
+- schedule table rows
+- realized schedule arrays
+- trial and template metadata
+- counts
+- metric components
+- requested experiment specification
+
+## Validation Runner
+
+The maintained validation surface is organized through:
+
+- `validation/manifest.py`
+- `validation/run_all.py`
+- `validation/execute_notebooks.py`
+- `validation/helpers/regenerate_v2_notebooks.py`
+
+That runner covers:
+
+- the full pytest suite
+- notebook execution from clean kernels
+- offline docs builds with warnings as errors
+- canonical Case 10 comparison
+- manuscript-support Case 10 generation
+- determinism checks
+- timing-architecture asset generation
