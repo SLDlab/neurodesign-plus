@@ -1,18 +1,29 @@
 # neurodesign-plus
 
-`neurodesign-plus` is the distribution name for the version-2.0.0 trial-aware release.
-The Python import namespace remains `neurodesign`.
+`neurodesign-plus` is an extended and maintained fork of the original [neurodesign](https://github.com/neuropower/neurodesign) package for fMRI experimental design optimisation.
 
-Version 2.0 models a run as conceptual trials containing one or more modeled events.
-That public model supports:
+In addition to the base package workflow, `neurodesign-plus` adds support for:
 
-- flat one-event shorthand through `order`
-- fixed complete trial templates through `trial_templates` plus `trials`
-- probabilistic complete-template sampling through `trial_templates`, `trial_template_probabilities`, and `n_conceptual_trials`
-- explicit timing roles through `event_durations`, `trial_start_interval`, `post_event_interval`, `event_transition_interval`, `inter_trial_interval`, and `rest_interval`
-- separate requested specifications, normalized rules, and realized timing arrays on the sampled `Design`
+1. fixed user-defined event orders via `order`,
+2. variable stimulus durations via `stimuli_durations`,
+3. transition-specific ITIs via `conditional_ITI`,
+4. probabilistic template-based ordering via `order_keys`, `order_probabilities`, and `order_length`.
 
-Optimization stays public through `Optimisation`. After `optimise()`, retrieve the authoritative reported design with `selected_design(0)`, then drive reporting and exports from that selected design. Reports are generated with `neurodesign.report`, and both schedules and experiment specifications can be exported in reconstructable JSON form. Seeded workflows use deterministic NumPy `SeedSequence` and `Generator` plumbing throughout design sampling and optimization.
+## Current version
+
+Version 2.0 is a breaking release: experiments are now built from **trials** (each holding one or more events) instead of a flat event list, so a few options were renamed. 1.0.x scripts need these renames:
+
+| 1.0.x                                                 | 2.0                                                                        |
+| ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| `stimuli_durations`                                   | `event_durations`                                                          |
+| `conditional_ITI`                                     | `event_transition_interval` / `inter_trial_interval`                       |
+| `order_keys` / `order_probabilities` / `order_length` | `trial_templates` / `trial_template_probabilities` / `n_conceptual_trials` |
+
+`Experiment`, `Design`, and `Optimisation` are unchanged. See the [migration
+guide](MIGRATION_2.0.md) to update old code, or pin `neurodesign-plus<2.0` to
+keep the old behavior.
+
+## Installation
 
 Install the published package with:
 
@@ -20,11 +31,17 @@ Install the published package with:
 python -m pip install neurodesign-plus
 ```
 
-For source, development, notebook, and documentation installs, see [manuals/SETUP.md](manuals/SETUP.md) and [docs/installation.md](docs/installation.md). For version-1 to version-2 migration details, see [MIGRATION_2.0.md](MIGRATION_2.0.md).
+## Documentation
+
+- `neurodesign-plus` documentation: [neurodesign-plus on Read the Docs](https://neurodesign-plus.readthedocs.io/en/latest/)
+- User guide: [docs/index.md](docs/index.md)
+- Installation notes: [docs/installation.md](docs/installation.md)
+- Migration guide (version-1 to version-2 migration details): [MIGRATION_2.0.md](MIGRATION_2.0.md)
+- Technical manual: [manuals/TECHNICAL_CHANGES.md](manuals/TECHNICAL_CHANGES.md)
+- Metrics guide: [manuals/METRICS.md](manuals/METRICS.md)
+- Tutorials: [docs/tutorials.md](docs/tutorials.md)
 
 ## Current API Example
-
-This public workflow is covered by the release-audit tests and notebook generator.
 
 ```python
 from pathlib import Path
@@ -73,15 +90,6 @@ Path("specification.json").write_text(
 )
 ```
 
-## Documentation
-
-- User guide: [docs/index.md](docs/index.md)
-- Installation notes: [docs/installation.md](docs/installation.md)
-- Migration guide: [MIGRATION_2.0.md](MIGRATION_2.0.md)
-- Technical manual: [manuals/TECHNICAL_CHANGES.md](manuals/TECHNICAL_CHANGES.md)
-- Metrics guide: [manuals/METRICS.md](manuals/METRICS.md)
-- Tutorials: [docs/tutorials.md](docs/tutorials.md)
-
 ## Repository Layout
 
 ```text
@@ -93,10 +101,22 @@ tutorials/   Executed tutorial notebooks
 validation/  Validation runners and reproducibility helpers
 ```
 
+## Tutorials
+
+The tutorial collection includes:
+
+- three overview tutorials in `tutorials/`,
+- four base-function tutorials in `tutorials/base_functions/`,
+- four feature-focused tutorials in `tutorials/new_functions/`.
+
+The Read the Docs tutorials page is the best place to browse the current notebook set and their intended learning progression.
+
 ## Credits
 
-This project is a maintained fork of the original [neurodesign](https://github.com/neuropower/neurodesign) package.
+This project is a maintained fork of the original [neurodesign](https://github.com/neuropower/neurodesign) package by Joke Durnez and the Neuropower team.
 
-- Original author: Joke Durnez and the Neuropower team
-- neurodesign-plus maintenance and tutorials: Atharv Amar Umap
-- supervision and design guidance: Valentin Guigon
+Author contributions ([CRediT](https://credit.niso.org/)):
+
+- **Atharv A. Umap** — Conceptualization, Software, Validation
+- **Caroline J. Charpentier** — Project administration
+- **Valentin Guigon** — Conceptualization, Methodology, Resources, Software, Supervision, Validation, Writing
