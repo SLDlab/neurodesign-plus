@@ -118,7 +118,7 @@ exp = Experiment(
 )
 
 design = exp.create_design(seed=7)
-design.designmatrix().FCalc(weights=[0.0, 0.5, 0.25, 0.25])
+design.designmatrix().FCalc(weights=[0.0, 0.5, 0.25, 0.25])  # order: Fe, Fd, Ff, Fc
 ```
 
 ## Current Optimisation Example
@@ -145,7 +145,7 @@ exp = Experiment(
 
 optimisation = Optimisation(
     experiment=exp,
-    weights=[0.0, 0.5, 0.25, 0.25],
+    weights=[0.0, 0.5, 0.25, 0.25],  # order: Fe, Fd, Ff, Fc
     preruncycles=1,
     cycles=1,
     optimisation="simulation",

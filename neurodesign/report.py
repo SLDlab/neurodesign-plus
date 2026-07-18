@@ -67,7 +67,23 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
         return y - height
 
     def _styled_table(rows, col_widths):
-        table = Table(rows, colWidths=col_widths)
+        # Wrap plain-string cells (e.g. row labels) in a Paragraph so long
+        # text wraps within its column instead of overflowing into the
+        # next one -- only _table_text()'s value cells were wrapped before,
+        # so a long label (e.g. "Convergence patience (stagnant
+        # generations):") could visually collide with its value.
+        wrapped_rows = [
+            [
+                (
+                    cell
+                    if isinstance(cell, Paragraph)
+                    else Paragraph(str(cell), styles["BodyText"])
+                )
+                for cell in row
+            ]
+            for row in rows
+        ]
+        table = Table(wrapped_rows, colWidths=col_widths)
         table.setStyle(
             TableStyle(
                 [
@@ -264,7 +280,7 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
     intro = "Experimental settings"
     body_story.append(Paragraph(intro, styles["Heading2"]))
     body_story.append(Spacer(1, 12))
-    body_story.append(_styled_table(exp, [190, 322]))
+    body_story.append(_styled_table(exp, [266, 266]))
 
     optset = "Optimalisation settings"
     body_story.append(Paragraph(optset, styles["Heading2"]))
@@ -296,7 +312,7 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
         ["Seed:", _table_text(population.seed)],
     ]
 
-    body_story.append(_styled_table(opt, [190, 322]))
+    body_story.append(_styled_table(opt, [266, 266]))
 
     summary_rows = [["Selection", "Final design", "Cluster", "F", "Fe", "Fd", "Ff", "Fc"]]
     for rank, final_idx in enumerate(selected_indices, start=1):

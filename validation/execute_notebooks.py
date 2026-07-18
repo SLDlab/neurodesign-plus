@@ -10,7 +10,38 @@ from pathlib import Path
 import nbformat
 from nbclient import NotebookClient
 
-from validation.helpers.regenerate_v2_notebooks import NOTEBOOKS, REPO_ROOT
+REPO_ROOT = Path(__file__).resolve().parents[1]
+NOTEBOOKS = [
+    REPO_ROOT / "tutorials" / "tutorial_1-neurodesign_base_overview.ipynb",
+    REPO_ROOT / "tutorials" / "tutorial_2-comparing_designs_across_experiments.ipynb",
+    REPO_ROOT / "tutorials" / "tutorial_3-progressive_experiment_building.ipynb",
+    REPO_ROOT / "tutorials" / "base_functions" / "tutorial_base-comparing_designs.ipynb",
+    REPO_ROOT
+    / "tutorials"
+    / "base_functions"
+    / "tutorial_base-designing_scoring_and_optimizing.ipynb",
+    REPO_ROOT
+    / "tutorials"
+    / "base_functions"
+    / "tutorial_base-discovering_best_design.ipynb",
+    REPO_ROOT
+    / "tutorials"
+    / "base_functions"
+    / "tutorial_base-optimizing_and_reporting.ipynb",
+    REPO_ROOT
+    / "tutorials"
+    / "new_functions"
+    / "tutorial_new-event_and_trial_intervals.ipynb",
+    REPO_ROOT / "tutorials" / "new_functions" / "tutorial_new-fixed_ordering.ipynb",
+    REPO_ROOT
+    / "tutorials"
+    / "new_functions"
+    / "tutorial_new-probabilistic_ordering.ipynb",
+    REPO_ROOT
+    / "tutorials"
+    / "new_functions"
+    / "tutorial_new-variable_event_durations.ipynb",
+]
 
 
 def execute_notebook(source: Path, output_root: Path) -> dict[str, object]:

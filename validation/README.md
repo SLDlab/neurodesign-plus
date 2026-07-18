@@ -5,9 +5,9 @@ This directory contains maintained validation code, small stable fixtures consum
 Maintained source:
 
 - `manifest.py`: authoritative workflow inventory for maintained release-validation entrypoints
-- `run_all.py`: aggregate validation runner
-- `execute_notebooks.py`: executes release-critical notebooks into an output copy tree
-- `run_case10_v2.py`: canonical version-1 versus version-2 Case 10 comparison
+- `run_all_validation_workflows.py`: aggregate validation runner
+- `execute_notebooks.py`: executes the tracked release-critical notebooks into an output copy tree
+- `compare_case10_v1_vs_v2.py`: canonical version-1 versus version-2 Case 10 comparison
 - `helpers/`: shared canonical Case 10 specification and version metadata helpers
 - `manuscript_support/`: manuscript-facing figure generators and wrappers
 
@@ -25,11 +25,11 @@ Generated outputs:
 How to run all maintained validations:
 
 ```bash
-python -m validation.run_all
+python -m validation.run_all_validation_workflows
 ```
 
 How failures are reported:
 
 - each workflow records stdout and stderr logs
-- `validation/_artifacts/run_all/validation_results.json` stores per-workflow status, runtime, command, and failure summary
+- `validation/_artifacts/run_all/validation_results.json` stores per-workflow status, runtime, command, and failure summary (the `run_all` artifact-directory name predates the script rename and is left as-is since it's a generated output path, not source code)
 - a nonzero exit code means at least one maintained workflow failed

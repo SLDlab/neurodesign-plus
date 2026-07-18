@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from neurodesign import Optimisation
-from validation.helpers.case10_v2 import build_case10_experiment
+from validation.helpers.case10_spec import build_case10_experiment
 from validation.helpers.version_metadata import capture_version_metadata
 
 

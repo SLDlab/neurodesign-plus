@@ -4,8 +4,8 @@ requires = ["hatchling"]
 
 [project]
 authors = [
-    {name = "Joke Durnez"},
     {name = "Atharv Amar Umap", email = "aumap@terpmail.umd.edu"},
+    {name = "Caroline J. Charpentier"},
     {name = "Valentin Guigon", email = "vguigon@umd.edu"}
 ]
 classifiers = [
@@ -64,7 +64,8 @@ test = [
     "nbformat",
     "pytest>=6.0.0",
     "pytest-cov",
-    "nbmake"
+    "nbmake",
+    "pymupdf"
 ]
 
 [project.urls]
@@ -112,5 +113,5 @@ addopts = "-ra --strict-config --strict-markers --doctest-modules --showlocals -
 doctest_optionflags = "NORMALIZE_WHITESPACE ELLIPSIS"
 junit_family = "xunit2"
 minversion = "6.0"
-norecursedirs = [".tmp_precommit", "validation/_artifacts"]
+norecursedirs = [".tmp_precommit", "validation/_artifacts", "tests/legacy", "neurodesign-original"]
 xfail_strict = true

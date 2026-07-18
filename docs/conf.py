@@ -5,8 +5,8 @@ import os
 
 # -- Project information -----------------------------------------------------
 project = "neurodesign-plus"
-copyright = "2016-2026, Joke Durnez, Atharv Umap, Valentin Guigon"
-author = "Joke Durnez, Atharv Umap, Valentin Guigon"
+copyright = "2026, Atharv Amar Umap, Caroline J. Charpentier, Valentin Guigon"
+author = "Atharv Amar Umap, Caroline J. Charpentier, Valentin Guigon"
 
 # Version from installed package metadata
 try:
@@ -87,7 +87,7 @@ latex_documents = [
         "index",
         "neurodesign-plus.tex",
         "neurodesign-plus Documentation",
-        "Joke Durnez, Atharv Umap, Valentin Guigon",
+        "Atharv Amar Umap, Caroline J. Charpentier, Valentin Guigon",
         "manual",
     ),
 ]

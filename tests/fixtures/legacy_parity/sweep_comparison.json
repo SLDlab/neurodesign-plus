@@ -1,0 +1,971 @@
+{
+  "metadata": {
+    "captured_at": "2026-07-16T15:59:06-0400",
+    "python_version": "3.12.10",
+    "python_executable": "C:\\Users\\vguigon\\Desktop\\Research_directory\\Lab_SLD\\neurodesign-plus\\.venv312\\Scripts\\python.exe",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "log_path": "tests\\fixtures\\legacy_parity\\run_logs\\sweep_comparison_run.log",
+    "total_wall_clock_seconds": 240.44778660009615
+  },
+  "settings": {
+    "preruncycles": 1,
+    "cycles": 1,
+    "G": 2,
+    "I": 1,
+    "outdes": 1,
+    "convergence": 10,
+    "weights": [
+      0.25,
+      0.25,
+      0.25,
+      0.25
+    ]
+  },
+  "runs": [
+    {
+      "config": {
+        "config_id": "trials_12_stimuli_2",
+        "n_trials": 12,
+        "n_stimuli": 2,
+        "TR": 2.0,
+        "duration": 44.400000000000006,
+        "stim_duration": 1.0,
+        "t_pre": 0.5,
+        "t_post": 0.2,
+        "iti_mean": 2.0,
+        "rho": 0.3,
+        "resolution": 0.1,
+        "P": [
+          0.5,
+          0.5
+        ],
+        "C": [
+          [
+            1,
+            -1
+          ]
+        ]
+      },
+      "seed": 101,
+      "pair_runtime_seconds": 26.10991939995438,
+      "neurodesign": {
+        "runtime_seconds": 11.507235800032504,
+        "best_order": [
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.6553637356417601,
+          "Fe": 1.0,
+          "Fd": 0.0002428213549191643,
+          "Ff": 0.8333333333333334,
+          "Fc": 0.7878787878787878
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 339.46335816665515,
+          "Fd_raw_a_optimality": 0.0824289525754368,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 10.5
+        },
+        "normalization_references": {
+          "FeMax": 339.46335816665515,
+          "FdMax": 339.46335816665515,
+          "FfMax": 12.0,
+          "FcMax": 49.5,
+          "confoundorder": 3
+        }
+      },
+      "neurodesign_legacy": {
+        "runtime_seconds": 12.332819300005212,
+        "best_order": [
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.6829971700343513,
+          "Fe": 0.9322942499920812,
+          "Fd": 0.14817927863017297,
+          "Ff": 0.8333333333333334,
+          "Fc": 0.8181818181818181
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 330.40095700947114,
+          "Fd_raw_a_optimality": 0.08887327424960738,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 9.0
+        },
+        "normalization_references": {
+          "FeMax": 354.3955752298993,
+          "FdMax": 0.5997685713629226,
+          "FfMax": 12.0,
+          "FcMax": 49.5,
+          "confoundorder": 3
+        }
+      }
+    },
+    {
+      "config": {
+        "config_id": "trials_12_stimuli_2",
+        "n_trials": 12,
+        "n_stimuli": 2,
+        "TR": 2.0,
+        "duration": 44.400000000000006,
+        "stim_duration": 1.0,
+        "t_pre": 0.5,
+        "t_post": 0.2,
+        "iti_mean": 2.0,
+        "rho": 0.3,
+        "resolution": 0.1,
+        "P": [
+          0.5,
+          0.5
+        ],
+        "C": [
+          [
+            1,
+            -1
+          ]
+        ]
+      },
+      "seed": 202,
+      "pair_runtime_seconds": 25.33788459992502,
+      "neurodesign": {
+        "runtime_seconds": 11.438570199999958,
+        "best_order": [
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.6553637356417601,
+          "Fe": 1.0,
+          "Fd": 0.0002428213549191643,
+          "Ff": 0.8333333333333334,
+          "Fc": 0.7878787878787878
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 339.46335816665515,
+          "Fd_raw_a_optimality": 0.0824289525754368,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 10.5
+        },
+        "normalization_references": {
+          "FeMax": 339.46335816665515,
+          "FdMax": 339.46335816665515,
+          "FfMax": 12.0,
+          "FcMax": 49.5,
+          "confoundorder": 3
+        }
+      },
+      "neurodesign_legacy": {
+        "runtime_seconds": 11.569775499985553,
+        "best_order": [
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.7252525770803855,
+          "Fe": 1.1350481372980992,
+          "Fd": 0.14475004981132134,
+          "Ff": 0.8333333333333334,
+          "Fc": 0.7878787878787878
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 355.48959094608796,
+          "Fd_raw_a_optimality": 0.09966323328351781,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 10.5
+        },
+        "normalization_references": {
+          "FeMax": 313.19340498836067,
+          "FdMax": 0.6885195094124443,
+          "FfMax": 12.0,
+          "FcMax": 49.5,
+          "confoundorder": 3
+        }
+      }
+    },
+    {
+      "config": {
+        "config_id": "trials_12_stimuli_2",
+        "n_trials": 12,
+        "n_stimuli": 2,
+        "TR": 2.0,
+        "duration": 44.400000000000006,
+        "stim_duration": 1.0,
+        "t_pre": 0.5,
+        "t_post": 0.2,
+        "iti_mean": 2.0,
+        "rho": 0.3,
+        "resolution": 0.1,
+        "P": [
+          0.5,
+          0.5
+        ],
+        "C": [
+          [
+            1,
+            -1
+          ]
+        ]
+      },
+      "seed": 303,
+      "pair_runtime_seconds": 25.44389189989306,
+      "neurodesign": {
+        "runtime_seconds": 10.835961299948394,
+        "best_order": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0
+        ],
+        "normalized_metrics": {
+          "F": 0.6478009459692688,
+          "Fe": 1.0,
+          "Fd": 0.00029469296798429444,
+          "Ff": 0.8333333333333334,
+          "Fc": 0.7575757575757576
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 372.26789655304964,
+          "Fd_raw_a_optimality": 0.1097047313204885,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 12.0
+        },
+        "normalization_references": {
+          "FeMax": 372.26789655304964,
+          "FdMax": 372.26789655304964,
+          "FfMax": 12.0,
+          "FcMax": 49.5,
+          "confoundorder": 3
+        }
+      },
+      "neurodesign_legacy": {
+        "runtime_seconds": 12.542544599971734,
+        "best_order": [
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "normalized_metrics": {
+          "F": 0.6873246696482145,
+          "Fe": 0.995147305974399,
+          "Fd": 0.1632422817093678,
+          "Ff": 0.8333333333333334,
+          "Fc": 0.7575757575757576
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 339.0626092327791,
+          "Fd_raw_a_optimality": 0.1043668498345444,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 12.0
+        },
+        "normalization_references": {
+          "FeMax": 340.7159997290911,
+          "FdMax": 0.6393371174531627,
+          "FfMax": 12.0,
+          "FcMax": 49.5,
+          "confoundorder": 3
+        }
+      }
+    },
+    {
+      "config": {
+        "config_id": "trials_14_stimuli_2",
+        "n_trials": 14,
+        "n_stimuli": 2,
+        "TR": 2.0,
+        "duration": 51.800000000000004,
+        "stim_duration": 1.0,
+        "t_pre": 0.5,
+        "t_post": 0.2,
+        "iti_mean": 2.0,
+        "rho": 0.3,
+        "resolution": 0.1,
+        "P": [
+          0.5,
+          0.5
+        ],
+        "C": [
+          [
+            1,
+            -1
+          ]
+        ]
+      },
+      "seed": 101,
+      "pair_runtime_seconds": 25.214711099979468,
+      "neurodesign": {
+        "runtime_seconds": 11.150840700021945,
+        "best_order": [
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.7052406741155344,
+          "Fe": 1.0,
+          "Fd": 0.0004498759493174172,
+          "Ff": 1.0,
+          "Fc": 0.8205128205128205
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 303.7485578218232,
+          "Fd_raw_a_optimality": 0.13664917080388916,
+          "Ff_raw_frequency_mismatch": 0.0,
+          "Fc_raw_transition_mismatch": 10.5
+        },
+        "normalization_references": {
+          "FeMax": 303.7485578218232,
+          "FdMax": 303.7485578218232,
+          "FfMax": 14.0,
+          "FcMax": 58.5,
+          "confoundorder": 3
+        }
+      },
+      "neurodesign_legacy": {
+        "runtime_seconds": 11.837826100061648,
+        "best_order": [
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "normalized_metrics": {
+          "F": 0.6911141044408913,
+          "Fe": 1.0,
+          "Fd": 0.13808279138993876,
+          "Ff": 0.8571428571428572,
+          "Fc": 0.7692307692307692
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 311.98878909449553,
+          "Fd_raw_a_optimality": 0.09390594929224542,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 13.5
+        },
+        "normalization_references": {
+          "FeMax": 311.98878909449553,
+          "FdMax": 0.680069893916468,
+          "FfMax": 14.0,
+          "FcMax": 58.5,
+          "confoundorder": 3
+        }
+      }
+    },
+    {
+      "config": {
+        "config_id": "trials_14_stimuli_2",
+        "n_trials": 14,
+        "n_stimuli": 2,
+        "TR": 2.0,
+        "duration": 51.800000000000004,
+        "stim_duration": 1.0,
+        "t_pre": 0.5,
+        "t_post": 0.2,
+        "iti_mean": 2.0,
+        "rho": 0.3,
+        "resolution": 0.1,
+        "P": [
+          0.5,
+          0.5
+        ],
+        "C": [
+          [
+            1,
+            -1
+          ]
+        ]
+      },
+      "seed": 202,
+      "pair_runtime_seconds": 28.198442599968985,
+      "neurodesign": {
+        "runtime_seconds": 13.47418490005657,
+        "best_order": [
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.7052406741155344,
+          "Fe": 1.0,
+          "Fd": 0.0004498759493174172,
+          "Ff": 1.0,
+          "Fc": 0.8205128205128205
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 303.7485578218232,
+          "Fd_raw_a_optimality": 0.13664917080388916,
+          "Ff_raw_frequency_mismatch": 0.0,
+          "Fc_raw_transition_mismatch": 10.5
+        },
+        "normalization_references": {
+          "FeMax": 303.7485578218232,
+          "FdMax": 303.7485578218232,
+          "FfMax": 14.0,
+          "FcMax": 58.5,
+          "confoundorder": 3
+        }
+      },
+      "neurodesign_legacy": {
+        "runtime_seconds": 12.425603099982254,
+        "best_order": [
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.7319584521593914,
+          "Fe": 1.0153040739764922,
+          "Fd": 0.13475195688329536,
+          "Ff": 1.0,
+          "Fc": 0.7777777777777778
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 279.78641033264245,
+          "Fd_raw_a_optimality": 0.0932938875111058,
+          "Ff_raw_frequency_mismatch": 0.0,
+          "Fc_raw_transition_mismatch": 13.0
+        },
+        "normalization_references": {
+          "FeMax": 275.56908073543343,
+          "FdMax": 0.6923379049100185,
+          "FfMax": 14.0,
+          "FcMax": 58.5,
+          "confoundorder": 3
+        }
+      }
+    },
+    {
+      "config": {
+        "config_id": "trials_14_stimuli_2",
+        "n_trials": 14,
+        "n_stimuli": 2,
+        "TR": 2.0,
+        "duration": 51.800000000000004,
+        "stim_duration": 1.0,
+        "t_pre": 0.5,
+        "t_post": 0.2,
+        "iti_mean": 2.0,
+        "rho": 0.3,
+        "resolution": 0.1,
+        "P": [
+          0.5,
+          0.5
+        ],
+        "C": [
+          [
+            1,
+            -1
+          ]
+        ]
+      },
+      "seed": 303,
+      "pair_runtime_seconds": 25.439040399971418,
+      "neurodesign": {
+        "runtime_seconds": 11.693342100013979,
+        "best_order": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.6545591129101208,
+          "Fe": 1.0,
+          "Fd": 0.0004098338138652892,
+          "Ff": 0.8571428571428572,
+          "Fc": 0.7606837606837606
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 321.1793935910327,
+          "Fd_raw_a_optimality": 0.13163017581035374,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 14.0
+        },
+        "normalization_references": {
+          "FeMax": 321.1793935910327,
+          "FdMax": 321.1793935910327,
+          "FfMax": 14.0,
+          "FcMax": 58.5,
+          "confoundorder": 3
+        }
+      },
+      "neurodesign_legacy": {
+        "runtime_seconds": 11.551054199924693,
+        "best_order": [
+          1,
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0
+        ],
+        "normalized_metrics": {
+          "F": 0.7389227282677244,
+          "Fe": 1.0175607793954882,
+          "Fd": 0.1603523558976317,
+          "Ff": 1.0,
+          "Fc": 0.7777777777777778
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 313.6651298762176,
+          "Fd_raw_a_optimality": 0.11429574156643513,
+          "Ff_raw_frequency_mismatch": 0.0,
+          "Fc_raw_transition_mismatch": 13.0
+        },
+        "normalization_references": {
+          "FeMax": 308.2519847733907,
+          "FdMax": 0.7127786862040308,
+          "FfMax": 14.0,
+          "FcMax": 58.5,
+          "confoundorder": 3
+        }
+      }
+    },
+    {
+      "config": {
+        "config_id": "trials_16_stimuli_2",
+        "n_trials": 16,
+        "n_stimuli": 2,
+        "TR": 2.0,
+        "duration": 59.2,
+        "stim_duration": 1.0,
+        "t_pre": 0.5,
+        "t_post": 0.2,
+        "iti_mean": 2.0,
+        "rho": 0.3,
+        "resolution": 0.1,
+        "P": [
+          0.5,
+          0.5
+        ],
+        "C": [
+          [
+            1,
+            -1
+          ]
+        ]
+      },
+      "seed": 101,
+      "pair_runtime_seconds": 30.35977780004032,
+      "neurodesign": {
+        "runtime_seconds": 10.874207200016826,
+        "best_order": [
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          0
+        ],
+        "normalized_metrics": {
+          "F": 0.7168024016309708,
+          "Fe": 1.0,
+          "Fd": 0.0005429398572160057,
+          "Ff": 1.0,
+          "Fc": 0.8666666666666667
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 262.6127014263564,
+          "Fd_raw_a_optimality": 0.14258290261553544,
+          "Ff_raw_frequency_mismatch": 0.0,
+          "Fc_raw_transition_mismatch": 9.0
+        },
+        "normalization_references": {
+          "FeMax": 262.6127014263564,
+          "FdMax": 262.6127014263564,
+          "FfMax": 16.0,
+          "FcMax": 67.5,
+          "confoundorder": 3
+        }
+      },
+      "neurodesign_legacy": {
+        "runtime_seconds": 17.074434599955566,
+        "best_order": [
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.7157119211654273,
+          "Fe": 1.0,
+          "Fd": 0.14340324021726453,
+          "Ff": 0.875,
+          "Fc": 0.8444444444444444
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 254.7350412960744,
+          "Fd_raw_a_optimality": 0.10111950230081662,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 10.5
+        },
+        "normalization_references": {
+          "FeMax": 254.7350412960744,
+          "FdMax": 0.7051409866863153,
+          "FfMax": 16.0,
+          "FcMax": 67.5,
+          "confoundorder": 3
+        }
+      }
+    },
+    {
+      "config": {
+        "config_id": "trials_16_stimuli_2",
+        "n_trials": 16,
+        "n_stimuli": 2,
+        "TR": 2.0,
+        "duration": 59.2,
+        "stim_duration": 1.0,
+        "t_pre": 0.5,
+        "t_post": 0.2,
+        "iti_mean": 2.0,
+        "rho": 0.3,
+        "resolution": 0.1,
+        "P": [
+          0.5,
+          0.5
+        ],
+        "C": [
+          [
+            1,
+            -1
+          ]
+        ]
+      },
+      "seed": 202,
+      "pair_runtime_seconds": 28.656434800010175,
+      "neurodesign": {
+        "runtime_seconds": 12.380524799926206,
+        "best_order": [
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          0
+        ],
+        "normalized_metrics": {
+          "F": 0.7168024016309708,
+          "Fe": 1.0,
+          "Fd": 0.0005429398572160057,
+          "Ff": 1.0,
+          "Fc": 0.8666666666666667
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 262.6127014263564,
+          "Fd_raw_a_optimality": 0.14258290261553544,
+          "Ff_raw_frequency_mismatch": 0.0,
+          "Fc_raw_transition_mismatch": 9.0
+        },
+        "normalization_references": {
+          "FeMax": 262.6127014263564,
+          "FdMax": 262.6127014263564,
+          "FfMax": 16.0,
+          "FcMax": 67.5,
+          "confoundorder": 3
+        }
+      },
+      "neurodesign_legacy": {
+        "runtime_seconds": 13.839922000071965,
+        "best_order": [
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0
+        ],
+        "normalized_metrics": {
+          "F": 0.742057603893709,
+          "Fe": 1.10170624691322,
+          "Fd": 0.19152416866161612,
+          "Ff": 0.875,
+          "Fc": 0.8
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 254.3804974385692,
+          "Fd_raw_a_optimality": 0.13004226244025532,
+          "Ff_raw_frequency_mismatch": 2.0,
+          "Fc_raw_transition_mismatch": 13.5
+        },
+        "normalization_references": {
+          "FeMax": 230.89684582555194,
+          "FdMax": 0.6789861736458613,
+          "FfMax": 16.0,
+          "FcMax": 67.5,
+          "confoundorder": 3
+        }
+      }
+    },
+    {
+      "config": {
+        "config_id": "trials_16_stimuli_2",
+        "n_trials": 16,
+        "n_stimuli": 2,
+        "TR": 2.0,
+        "duration": 59.2,
+        "stim_duration": 1.0,
+        "t_pre": 0.5,
+        "t_post": 0.2,
+        "iti_mean": 2.0,
+        "rho": 0.3,
+        "resolution": 0.1,
+        "P": [
+          0.5,
+          0.5
+        ],
+        "C": [
+          [
+            1,
+            -1
+          ]
+        ]
+      },
+      "seed": 303,
+      "pair_runtime_seconds": 25.51199400005862,
+      "neurodesign": {
+        "runtime_seconds": 11.06495469994843,
+        "best_order": [
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          0
+        ],
+        "normalized_metrics": {
+          "F": 0.7168024016309708,
+          "Fe": 1.0,
+          "Fd": 0.0005429398572160057,
+          "Ff": 1.0,
+          "Fc": 0.8666666666666667
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 262.6127014263564,
+          "Fd_raw_a_optimality": 0.14258290261553544,
+          "Ff_raw_frequency_mismatch": 0.0,
+          "Fc_raw_transition_mismatch": 9.0
+        },
+        "normalization_references": {
+          "FeMax": 262.6127014263564,
+          "FdMax": 262.6127014263564,
+          "FfMax": 16.0,
+          "FcMax": 67.5,
+          "confoundorder": 3
+        }
+      },
+      "neurodesign_legacy": {
+        "runtime_seconds": 12.280695699970238,
+        "best_order": [
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1
+        ],
+        "normalized_metrics": {
+          "F": 0.7371759770792258,
+          "Fe": 1.0,
+          "Fd": 0.1561113157243104,
+          "Ff": 1.0,
+          "Fc": 0.7925925925925926
+        },
+        "raw_common_scale_metrics": {
+          "Fe_raw_a_optimality": 262.772542406788,
+          "Fd_raw_a_optimality": 0.11341517398642897,
+          "Ff_raw_frequency_mismatch": 0.0,
+          "Fc_raw_transition_mismatch": 14.0
+        },
+        "normalization_references": {
+          "FeMax": 262.772542406788,
+          "FdMax": 0.7265019416447553,
+          "FfMax": 16.0,
+          "FcMax": 67.5,
+          "confoundorder": 3
+        }
+      }
+    }
+  ]
+}

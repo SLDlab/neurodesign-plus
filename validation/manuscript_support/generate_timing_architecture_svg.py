@@ -3,8 +3,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
+import matplotlib
+
+# Force a headless backend before any other matplotlib import: this script
+# never shows a window, but plt.subplots() otherwise probes for an
+# interactive backend (e.g. TkAgg) and can fail on a machine with a broken
+# or partial Tk install even though no display is actually needed.
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.patches import Rectangle  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = Path(
@@ -13,12 +21,15 @@ OUTPUT_DIR = Path(
         REPO_ROOT / "validation" / "_artifacts" / "timing_svg",
     )
 )
-DOCS_IMAGES_DIR = REPO_ROOT / "manuscript" / "docs_images"
+DOCS_IMAGES_DIRS = [
+    REPO_ROOT / "manuscript" / "docs_images",
+    REPO_ROOT / "docs" / "_images",
+]
 
-PANEL_A_FORMULA = "Flattened metric axis: pre-trial interval + event + post-event interval + inter-trial interval"
+PANEL_A_FORMULA = r"$T_{\mathrm{pre}} + E + T_{\mathrm{post}} + T_{\mathrm{ITI}}$"
 PANEL_B_FORMULA = (
-    "Flattened metric axis: pre-trial interval + sum(event_i + post_i + within-trial transition_i) + "
-    "final event + post + inter-trial interval"
+    r"$T_{\mathrm{pre}} + \sum_{i=1}^{n-1}(E_i + T_{\mathrm{post},i} + T_{\mathrm{trans},i}) "
+    r"+ E_n + T_{\mathrm{post},n} + T_{\mathrm{ITI}}$"
 )
 
 
@@ -38,7 +49,7 @@ def _svg() -> str:
   <text x="60" y="94" class="small">Conceptual trials determine sampling and boundaries. Flattened modeled events determine event-level timing, frequency, and transition metrics.</text>
 
   <rect x="50" y="130" width="1380" height="210" rx="18" fill="#FFFFFF" stroke="#D9E2EC"/>
-  <text x="80" y="170" class="panel">Panel A. Original one-event trial container</text>
+  <text x="80" y="170" class="panel">Panel A. Original one-event conceptual trial</text>
   <line x1="100" y1="250" x2="1340" y2="250" stroke="#BCCCDC" stroke-width="4"/>
   <rect x="150" y="214" width="155" height="72" fill="#D9E2EC" stroke="#BCCCDC"/>
   <rect x="305" y="214" width="240" height="72" fill="#4F6D7A" stroke="#BCCCDC"/>
@@ -51,8 +62,8 @@ def _svg() -> str:
   <text x="150" y="205" class="tiny">trial starts</text>
   <text x="720" y="205" class="tiny">trial ends</text>
   <text x="150" y="312" class="small">Flattened metric axis:</text>
-  <text x="332" y="312" class="small">pre-trial interval + event + post-event interval + inter-trial interval</text>
-  <text x="150" y="333" class="light">Original one-event trials expose one modeled event per conceptual trial.</text>
+  <text x="332" y="312" class="small"><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">pre</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">E</tspan><tspan> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">post</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">ITI</tspan></text>
+  <text x="150" y="333" class="light">Original one-event trials expose one modeled event per conceptual trial. <tspan font-style="italic">T</tspan><tspan dy="3" font-size="80%">pre</tspan><tspan dy="-3"> = pre-trial interval, </tspan><tspan font-style="italic">E</tspan><tspan> = event, </tspan><tspan font-style="italic">T</tspan><tspan dy="3" font-size="80%">post</tspan><tspan dy="-3"> = post-event interval, </tspan><tspan font-style="italic">T</tspan><tspan dy="3" font-size="80%">ITI</tspan><tspan dy="-3"> = inter-trial interval.</tspan></text>
 
   <rect x="50" y="370" width="1380" height="260" rx="18" fill="#FFFFFF" stroke="#D9E2EC"/>
   <text x="80" y="410" class="panel">Panel B. Version-2 multi-event conceptual trial</text>
@@ -78,8 +89,8 @@ def _svg() -> str:
   <text x="1174" y="512" class="label">post n</text>
   <text x="1270" y="512" class="label">inter-trial</text>
   <text x="148" y="565" class="small">Flattened metric axis:</text>
-  <text x="310" y="565" class="small">pre-trial interval + sum(event_i + post_i + within-trial transition_i) + final event + post + inter-trial interval</text>
-  <text x="148" y="590" class="light">Conceptual-trial count T governs sampling and boundaries; modeled-event count E governs Ff and Fc.</text>
+  <text x="310" y="565" class="small"><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">pre</tspan><tspan dy="-5"> + </tspan><tspan font-size="130%">&#931;</tspan><tspan dy="6" font-size="60%">i=1</tspan><tspan dy="-14" font-size="60%">n-1</tspan><tspan dy="8">(</tspan><tspan font-style="italic">E</tspan><tspan dy="5" font-size="70%">i</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">post,i</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">trans,i</tspan><tspan dy="-5">) + </tspan><tspan font-style="italic">E</tspan><tspan dy="5" font-size="70%">n</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">post,n</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">ITI</tspan></text>
+  <text x="148" y="590" class="light">Conceptual-trial count T governs sampling and boundaries; modeled-event count E governs Ff and Fc. <tspan font-style="italic">T</tspan><tspan dy="3" font-size="80%">trans</tspan><tspan dy="-3"> = within-trial transition.</tspan></text>
   <text x="148" y="611" class="light">Optional rest intervals are inserted only at conceptual-trial boundaries and do not create modeled events.</text>
 
   <rect x="50" y="660" width="1380" height="270" rx="18" fill="#FFFFFF" stroke="#D9E2EC"/>
@@ -143,7 +154,7 @@ def _render_png(target: Path) -> None:
     ax.text(
         80,
         170,
-        "Panel A. Original one-event trial container",
+        "Panel A. Original one-event conceptual trial",
         fontsize=16,
         fontweight="bold",
         color="#102A43",
@@ -212,7 +223,9 @@ def _render_png(target: Path) -> None:
     ax.text(
         150,
         332,
-        "Original one-event trials expose one modeled event per conceptual trial.",
+        r"Original one-event trials expose one modeled event per conceptual trial. "
+        r"$T_{\mathrm{pre}}$ = pre-trial interval, $E$ = event, $T_{\mathrm{post}}$ = "
+        r"post-event interval, $T_{\mathrm{ITI}}$ = inter-trial interval.",
         fontsize=10,
         color="#627D98",
     )
@@ -244,7 +257,8 @@ def _render_png(target: Path) -> None:
     ax.text(
         148,
         588,
-        "Conceptual-trial count T governs sampling and boundaries; modeled-event count E governs Ff and Fc.",
+        r"Conceptual-trial count T governs sampling and boundaries; modeled-event count E "
+        r"governs Ff and Fc. $T_{\mathrm{trans}}$ = within-trial transition.",
         fontsize=10,
         color="#627D98",
     )
@@ -370,15 +384,16 @@ def _render_png(target: Path) -> None:
 def main() -> None:
     """Write the timing-architecture SVG and rendered PNG outputs."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    DOCS_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     svg_path = OUTPUT_DIR / "architecture_schematic.svg"
     png_path = OUTPUT_DIR / "architecture_schematic.png"
     svg_path.write_text(_svg(), encoding="utf-8")
     _render_png(png_path)
-    (DOCS_IMAGES_DIR / svg_path.name).write_text(
-        svg_path.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    (DOCS_IMAGES_DIR / png_path.name).write_bytes(png_path.read_bytes())
+    for docs_images_dir in DOCS_IMAGES_DIRS:
+        docs_images_dir.mkdir(parents=True, exist_ok=True)
+        (docs_images_dir / svg_path.name).write_text(
+            svg_path.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        (docs_images_dir / png_path.name).write_bytes(png_path.read_bytes())
 
 
 if __name__ == "__main__":

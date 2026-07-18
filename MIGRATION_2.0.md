@@ -169,5 +169,5 @@ The package does not depend on global NumPy reseeding or Python `random`.
 
 ## Case 10
 
-The canonical version-2 Case 10 source lives in `validation/helpers/case10_v2.py`.
+The canonical version-2 Case 10 source lives in `validation/helpers/case10_spec.py`.
 Tutorial 3, the validation comparison workflow, the determinism workflow, and manuscript-support generation all reuse that shared source.

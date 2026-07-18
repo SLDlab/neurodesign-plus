@@ -8,10 +8,19 @@ import sys
 import textwrap
 from pathlib import Path
 
-import matplotlib.patheffects as pe
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.patches import Patch, Rectangle
+import matplotlib
+
+# Force a headless backend before any other matplotlib import: this script
+# never shows a window, but plt.subplots() otherwise probes for an
+# interactive backend (e.g. TkAgg) and can fail on a machine with a broken
+# or partial Tk install even though no display is actually needed.
+matplotlib.use("Agg")
+
+import fitz  # pymupdf  # noqa: E402
+import matplotlib.patheffects as pe  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+from matplotlib.patches import Patch, Rectangle  # noqa: E402
 
 os.environ.setdefault(
     "MPLCONFIGDIR", str(Path(__file__).resolve().parents[1] / ".tmp_mpl")
@@ -22,13 +31,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from neurodesign import Optimisation
-from validation.helpers.case10_v2 import (
+from neurodesign import Optimisation  # noqa: E402
+from validation.helpers.case10_spec import (  # noqa: E402
     COMMON_SPEC,
     TRIAL_TEMPLATES,
     build_case10_experiment,
 )
-from validation.helpers.version_metadata import capture_version_metadata
+from validation.helpers.version_metadata import capture_version_metadata  # noqa: E402
 
 OUTPUT_DIR = REPO_ROOT / "validation" / "manuscript_support"
 OUTPUT_DIR = Path(
@@ -38,7 +47,10 @@ OUTPUT_DIR = Path(
     )
 )
 ARTIFACTS_DIR = OUTPUT_DIR / "artifacts_v2"
-DOCS_IMAGES_DIR = REPO_ROOT / "manuscript" / "docs_images"
+DOCS_IMAGES_DIRS = [
+    REPO_ROOT / "manuscript" / "docs_images",
+    REPO_ROOT / "docs" / "_images",
+]
 
 EVENT_COLORS = {
     "cue_easy": "#4F6D7A",
@@ -85,10 +97,11 @@ def _stable_hash(value) -> str:
 
 
 def _mirror(path: Path) -> None:
-    """Copy a generated manuscript image into the docs image mirror."""
-    destination = DOCS_IMAGES_DIR / path.name
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(path, destination)
+    """Copy a generated manuscript image into every docs image mirror."""
+    for docs_images_dir in DOCS_IMAGES_DIRS:
+        destination = docs_images_dir / path.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, destination)
 
 
 def _render_schedule_figure(design, target: Path) -> None:
@@ -467,13 +480,27 @@ def _render_convolved_figure(design, target: Path) -> None:
         ax.grid(alpha=0.2)
         ax.legend(loc="upper right", fontsize=8, frameon=False)
         ax.set_xlim(window_start, window_end)
-        ax.set_ylim(0.0, max(panel_max * 1.08, 0.1))
+        ax.set_ylim(0.0, max(panel_max * 1.3, 0.5))
         _draw_trial_strip(
             strip_ax, design, trial_indices, window_start, window_end, template
         )
 
     fig.savefig(target, dpi=180)
     plt.close(fig)
+
+
+def _render_report_pages(pdf_path: Path, output_dir: Path, prefix: str) -> list[Path]:
+    """Rasterize each page of the generated report PDF to a PNG."""
+    page_paths = []
+    report_doc = fitz.open(pdf_path)
+    try:
+        for page_number, page in enumerate(report_doc):
+            page_png = output_dir / f"{prefix}_report_page-{page_number + 1}.png"
+            page.get_pixmap(dpi=150).save(page_png)
+            page_paths.append(page_png)
+    finally:
+        report_doc.close()
+    return page_paths
 
 
 def main() -> None:
@@ -507,6 +534,13 @@ def main() -> None:
     _render_convolved_figure(design, convolved_png)
     _mirror(schedule_png)
     _mirror(convolved_png)
+
+    report_pdf_path = ARTIFACTS_DIR / "download_bundle" / "report.pdf"
+    report_page_pngs = _render_report_pages(
+        report_pdf_path, OUTPUT_DIR, "case10_nontrivial"
+    )
+    for report_page_png in report_page_pngs:
+        _mirror(report_page_png)
 
     export_path = ARTIFACTS_DIR / "download_bundle" / "design_0" / "event_schedule.json"
     exported_payload = json.loads(export_path.read_text(encoding="utf-8"))
@@ -543,7 +577,8 @@ def main() -> None:
         "figure_paths": {
             "schedule_png": str(schedule_png),
             "convolved_png": str(convolved_png),
-            "report_pdf": str(ARTIFACTS_DIR / "download_bundle" / "report.pdf"),
+            "report_pdf": str(report_pdf_path),
+            "report_page_pngs": [str(path) for path in report_page_pngs],
             "event_schedule_json": str(export_path),
         },
         "metrics": {

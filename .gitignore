@@ -5,17 +5,13 @@ neurodesign/_version.py
 
 .vscode
 .agents/
+.claude/
 .suplex/
 AGENTS.md
 CLAUDE.md
 SUPLEX.md
 .venv/
-.venv312/
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.tmp_ipython/
-.tmp_mpl/
 build/
 output/
 manuscript/

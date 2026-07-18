@@ -184,9 +184,8 @@ Exports preserve enough information to reconstruct the selected schedule:
 The maintained validation surface is organized through:
 
 - `validation/manifest.py`
-- `validation/run_all.py`
+- `validation/run_all_validation_workflows.py`
 - `validation/execute_notebooks.py`
-- `validation/helpers/regenerate_v2_notebooks.py`
 
 That runner covers:
 

@@ -420,7 +420,7 @@ def test_case10_manuscript_provenance_hashes_match(tmp_path):
         [
             sys.executable,
             "-m",
-            "validation.manuscript_support.generate_tutorial3_case10_v2_package",
+            "validation.manuscript_support.generate_case10_manuscript_figures",
         ],
         cwd=REPO_ROOT,
         capture_output=True,

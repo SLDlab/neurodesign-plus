@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="980" viewBox="0 0 1480 980">
+  <style>
+    .title { font: 700 30px 'Arial'; fill: #102A43; }
+    .subtitle { font: 700 20px 'Arial'; fill: #243B53; }
+    .panel { font: 700 18px 'Arial'; fill: #102A43; }
+    .label { font: 600 14px 'Arial'; fill: #102A43; }
+    .small { font: 500 13px 'Arial'; fill: #334E68; }
+    .tiny { font: 500 12px 'Arial'; fill: #486581; }
+    .light { font: 500 12px 'Arial'; fill: #627D98; }
+  </style>
+  <rect width="1480" height="980" fill="#F8FBFF"/>
+  <text x="60" y="60" class="title">Neurodesign-Plus 2.0 timing architecture</text>
+  <text x="60" y="94" class="small">Conceptual trials determine sampling and boundaries. Flattened modeled events determine event-level timing, frequency, and transition metrics.</text>
+
+  <rect x="50" y="130" width="1380" height="210" rx="18" fill="#FFFFFF" stroke="#D9E2EC"/>
+  <text x="80" y="170" class="panel">Panel A. Original one-event conceptual trial</text>
+  <line x1="100" y1="250" x2="1340" y2="250" stroke="#BCCCDC" stroke-width="4"/>
+  <rect x="150" y="214" width="155" height="72" fill="#D9E2EC" stroke="#BCCCDC"/>
+  <rect x="305" y="214" width="240" height="72" fill="#4F6D7A" stroke="#BCCCDC"/>
+  <rect x="545" y="214" width="180" height="72" fill="#F4F1DE" stroke="#BCCCDC"/>
+  <rect x="725" y="214" width="235" height="72" fill="#CBD5E0" stroke="#BCCCDC"/>
+  <text x="180" y="256" class="label">pre-trial interval</text>
+  <text x="390" y="256" class="label" fill="#FFFFFF">stimulus event</text>
+  <text x="575" y="256" class="label">post-event interval</text>
+  <text x="742" y="256" class="label">inter-trial interval</text>
+  <text x="150" y="205" class="tiny">trial starts</text>
+  <text x="720" y="205" class="tiny">trial ends</text>
+  <text x="150" y="312" class="small">Flattened metric axis:</text>
+  <text x="332" y="312" class="small"><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">pre</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">E</tspan><tspan> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">post</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">ITI</tspan></text>
+  <text x="150" y="333" class="light">Original one-event trials expose one modeled event per conceptual trial. <tspan font-style="italic">T</tspan><tspan dy="3" font-size="80%">pre</tspan><tspan dy="-3"> = pre-trial interval, </tspan><tspan font-style="italic">E</tspan><tspan> = event, </tspan><tspan font-style="italic">T</tspan><tspan dy="3" font-size="80%">post</tspan><tspan dy="-3"> = post-event interval, </tspan><tspan font-style="italic">T</tspan><tspan dy="3" font-size="80%">ITI</tspan><tspan dy="-3"> = inter-trial interval.</tspan></text>
+
+  <rect x="50" y="370" width="1380" height="260" rx="18" fill="#FFFFFF" stroke="#D9E2EC"/>
+  <text x="80" y="410" class="panel">Panel B. Version-2 multi-event conceptual trial</text>
+  <line x1="100" y1="505" x2="1340" y2="505" stroke="#BCCCDC" stroke-width="4"/>
+  <rect x="145" y="470" width="145" height="70" fill="#D9E2EC" stroke="#BCCCDC"/>
+  <rect x="290" y="470" width="120" height="70" fill="#4F6D7A" stroke="#BCCCDC"/>
+  <rect x="410" y="470" width="105" height="70" fill="#F4F1DE" stroke="#BCCCDC"/>
+  <rect x="515" y="470" width="115" height="70" fill="#EAD2AC" stroke="#BCCCDC"/>
+  <rect x="630" y="470" width="150" height="70" fill="#6C5B7B" stroke="#BCCCDC"/>
+  <rect x="780" y="470" width="105" height="70" fill="#F4F1DE" stroke="#BCCCDC"/>
+  <rect x="885" y="470" width="115" height="70" fill="#EAD2AC" stroke="#BCCCDC"/>
+  <rect x="1000" y="470" width="150" height="70" fill="#F8B195" stroke="#BCCCDC"/>
+  <rect x="1150" y="470" width="105" height="70" fill="#F4F1DE" stroke="#BCCCDC"/>
+  <rect x="1255" y="470" width="120" height="70" fill="#CBD5E0" stroke="#BCCCDC"/>
+  <text x="168" y="512" class="label">pre-trial interval</text>
+  <text x="335" y="512" class="label" fill="#FFFFFF">event 1</text>
+  <text x="433" y="512" class="label">post 1</text>
+  <text x="532" y="512" class="label">1 to 2</text>
+  <text x="680" y="512" class="label" fill="#FFFFFF">event 2</text>
+  <text x="803" y="512" class="label">post 2</text>
+  <text x="902" y="512" class="label">2 to n</text>
+  <text x="1050" y="512" class="label">event n</text>
+  <text x="1174" y="512" class="label">post n</text>
+  <text x="1270" y="512" class="label">inter-trial</text>
+  <text x="148" y="565" class="small">Flattened metric axis:</text>
+  <text x="310" y="565" class="small"><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">pre</tspan><tspan dy="-5"> + </tspan><tspan font-size="130%">&#931;</tspan><tspan dy="6" font-size="60%">i=1</tspan><tspan dy="-14" font-size="60%">n-1</tspan><tspan dy="8">(</tspan><tspan font-style="italic">E</tspan><tspan dy="5" font-size="70%">i</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">post,i</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">trans,i</tspan><tspan dy="-5">) + </tspan><tspan font-style="italic">E</tspan><tspan dy="5" font-size="70%">n</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">post,n</tspan><tspan dy="-5"> + </tspan><tspan font-style="italic">T</tspan><tspan dy="5" font-size="70%">ITI</tspan></text>
+  <text x="148" y="590" class="light">Conceptual-trial count T governs sampling and boundaries; modeled-event count E governs Ff and Fc. <tspan font-style="italic">T</tspan><tspan dy="3" font-size="80%">trans</tspan><tspan dy="-3"> = within-trial transition.</tspan></text>
+  <text x="148" y="611" class="light">Optional rest intervals are inserted only at conceptual-trial boundaries and do not create modeled events.</text>
+
+  <rect x="50" y="660" width="1380" height="270" rx="18" fill="#FFFFFF" stroke="#D9E2EC"/>
+  <text x="80" y="700" class="panel">Panel C. Three Case 10 conceptual-trial schedules</text>
+  <text x="85" y="745" class="label">standard</text>
+  <rect x="215" y="720" width="130" height="50" fill="#4F6D7A" stroke="#BCCCDC"/><text x="248" y="751" class="label" fill="#FFFFFF">cue_easy</text>
+  <rect x="345" y="720" width="90" height="50" fill="#EAD2AC" stroke="#BCCCDC"/><text x="358" y="751" class="label">transition</text>
+  <rect x="435" y="720" width="145" height="50" fill="#6C5B7B" stroke="#BCCCDC"/><text x="462" y="751" class="label" fill="#FFFFFF">choice_left</text>
+  <rect x="580" y="720" width="90" height="50" fill="#EAD2AC" stroke="#BCCCDC"/><text x="593" y="751" class="label">transition</text>
+  <rect x="670" y="720" width="125" height="50" fill="#F8B195" stroke="#BCCCDC"/><text x="700" y="751" class="label">feedback</text>
+  <rect x="795" y="720" width="120" height="50" fill="#CBD5E0" stroke="#BCCCDC"/><text x="817" y="751" class="label">inter-trial</text>
+
+  <text x="85" y="820" class="label">hint_branch</text>
+  <rect x="215" y="795" width="130" height="50" fill="#C06C84" stroke="#BCCCDC"/><text x="248" y="826" class="label" fill="#FFFFFF">cue_hard</text>
+  <rect x="345" y="795" width="90" height="50" fill="#EAD2AC" stroke="#BCCCDC"/><text x="358" y="826" class="label">transition</text>
+  <rect x="435" y="795" width="105" height="50" fill="#99B898" stroke="#BCCCDC"/><text x="468" y="826" class="label">hint</text>
+  <rect x="540" y="795" width="90" height="50" fill="#EAD2AC" stroke="#BCCCDC"/><text x="553" y="826" class="label">transition</text>
+  <rect x="630" y="795" width="150" height="50" fill="#355C7D" stroke="#BCCCDC"/><text x="658" y="826" class="label" fill="#FFFFFF">choice_right</text>
+  <rect x="780" y="795" width="90" height="50" fill="#EAD2AC" stroke="#BCCCDC"/><text x="793" y="826" class="label">transition</text>
+  <rect x="870" y="795" width="125" height="50" fill="#F8B195" stroke="#BCCCDC"/><text x="900" y="826" class="label">feedback</text>
+  <rect x="995" y="795" width="120" height="50" fill="#CBD5E0" stroke="#BCCCDC"/><text x="1017" y="826" class="label">inter-trial</text>
+
+  <text x="85" y="895" class="label">hold_branch</text>
+  <rect x="215" y="870" width="130" height="50" fill="#4F6D7A" stroke="#BCCCDC"/><text x="248" y="901" class="label" fill="#FFFFFF">cue_easy</text>
+  <rect x="345" y="870" width="90" height="50" fill="#EAD2AC" stroke="#BCCCDC"/><text x="358" y="901" class="label">transition</text>
+  <rect x="435" y="870" width="105" height="50" fill="#E84A5F" stroke="#BCCCDC"/><text x="470" y="901" class="label">hold</text>
+  <rect x="540" y="870" width="90" height="50" fill="#EAD2AC" stroke="#BCCCDC"/><text x="553" y="901" class="label">transition</text>
+  <rect x="630" y="870" width="145" height="50" fill="#6C5B7B" stroke="#BCCCDC"/><text x="657" y="901" class="label" fill="#FFFFFF">choice_left</text>
+  <rect x="775" y="870" width="90" height="50" fill="#EAD2AC" stroke="#BCCCDC"/><text x="788" y="901" class="label">transition</text>
+  <rect x="865" y="870" width="125" height="50" fill="#F8B195" stroke="#BCCCDC"/><text x="895" y="901" class="label">feedback</text>
+  <rect x="990" y="870" width="120" height="50" fill="#CBD5E0" stroke="#BCCCDC"/><text x="1012" y="901" class="label">inter-trial</text>
+</svg>

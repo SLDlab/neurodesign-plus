@@ -9,7 +9,7 @@ from neurodesign.classes import (
     Experiment as ClassesExperiment,
     Optimisation as ClassesOptimisation,
 )
-from validation.helpers.case10_v2 import TRIAL_TEMPLATES, build_case10_experiment
+from validation.helpers.case10_spec import TRIAL_TEMPLATES, build_case10_experiment
 
 
 def test_authoritative_public_imports():

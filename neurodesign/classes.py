@@ -524,11 +524,22 @@ class Design:
 
     def check_maxrep(self, maxrep):
         """Return ``False`` if any flattened event category repeats too often."""
-        for stim in range(self.experiment.n_stimuli):
-            repcheck = "".join(str(e) for e in [stim] * maxrep) not in "".join(
-                str(e) for e in self.order
-            )
-            if not repcheck:
+        # Tracks consecutive run length directly on the category codes,
+        # rather than concatenating codes into a string and searching for a
+        # repeated substring: with 10+ categories, codes become multi-digit,
+        # so e.g. category 1 followed by category 12 concatenates to "112",
+        # which a substring search would misread as three consecutive 1's.
+        if maxrep is None:
+            return True
+        run_value = None
+        run_length = 0
+        for code in self.order:
+            if code == run_value:
+                run_length += 1
+            else:
+                run_value = code
+                run_length = 1
+            if run_length >= maxrep:
                 return False
         return True
 
@@ -883,11 +894,101 @@ class Experiment:
     ):
         """Create an experiment specification.
 
-        The constructor accepts either classic flat one-event designs or
-        template-based conceptual-trial specifications. In template modes,
-        ``n_conceptual_trials`` controls sampling and boundaries, while the
-        realized flattened event sequence determines event-level timing and
-        Ff/Fc metrics.
+        The constructor accepts either classic flat one-event designs (via
+        ``order``/``n_trials``, or generated from ``P``) or template-based
+        conceptual-trial specifications (via ``trial_templates`` plus either
+        ``trials`` or ``trial_template_probabilities``/``n_conceptual_trials``).
+        In template modes, ``n_conceptual_trials`` controls sampling and
+        boundaries, while the realized flattened event sequence determines
+        event-level timing and Ff/Fc metrics.
+
+        Parameters
+        ----------
+        TR:
+            Repetition time (scan interval), in seconds.
+        P:
+            Target proportion of each modeled event category (length
+            ``n_stimuli``, sums to ~1). Used for flat-order generation and,
+            when ``hardprob`` is set, as a hard constraint on realized
+            proportions; otherwise it is the soft reference for ``Ff``.
+        C:
+            Contrast matrix (one row per contrast, one column per modeled
+            event category) used by ``Fe``/``Fd`` efficiency calculations.
+        rho:
+            AR(1) autocorrelation coefficient used to build the temporal
+            whitening matrix for ``Fd``.
+        n_stimuli:
+            Number of distinct modeled event categories.
+        stim_duration:
+            Legacy alias for a fixed ``event_durations`` value; ignored if
+            ``event_durations`` is also given.
+        event_durations:
+            Duration rule for modeled events: a scalar, a rule dict (for
+            example ``{"model": "fixed", "mean": 1.0}``), or a selector
+            keyed by event category. Ignored for template modes, where each
+            template event carries its own ``duration``.
+        trial_start_interval, post_event_interval, event_transition_interval,
+        inter_trial_interval, rest_interval:
+            Timing-rule specifications (scalar or rule dict) for, respectively:
+            the interval before a trial's first event, the interval after each
+            event, the interval between events inside the same conceptual
+            trial, the interval after a trial ends, and the interval inserted
+            at optional rest boundaries. See ``MIGRATION_2.0.md`` for the full
+            legacy-name mapping (for example ``t_pre`` -> ``trial_start_interval``).
+        rest_every_n_trials:
+            Insert a rest interval after every ``N`` conceptual trials;
+            ``None`` disables rests.
+        n_trials:
+            Number of flat one-event trials to generate when ``order`` is not
+            given and no trial templates are configured.
+        duration:
+            Total experiment duration in seconds. If ``None``, it is derived
+            from the scheduling mode's trial/interval structure.
+        resolution:
+            Time-grid step (seconds) used for the modeling grid; must divide
+            ``TR`` evenly (adjusted with a warning if it does not).
+        FeMax, FdMax, FcMax, FfMax:
+            Calibration references used to scale ``Fe``/``Fd``/``Fc``/``Ff``
+            into a comparable range. Left at their default of ``1`` (i.e.
+            uncalibrated), the corresponding raw score is unbounded; the
+            optimisation prerun calibrates ``FeMax``/``FdMax`` automatically
+            when that metric has positive weight, and ``FfMax``/``FcMax`` are
+            calibrated analytically at construction time.
+        maxrep:
+            Maximum allowed number of consecutive repeats of the same event
+            category in the flattened order; ``None`` disables the check.
+        hardprob:
+            If ``True``, require the realized flattened event proportions to
+            closely match ``P`` (hard constraint) instead of only scoring the
+            mismatch softly via ``Ff``.
+        confoundorder:
+            Maximum lag order considered by the ``Fc`` transition-balance
+            score.
+        order:
+            Explicit flat one-event category sequence. If given, designs are
+            realized from this fixed order rather than sampled.
+        trial_templates:
+            List of template dicts for conceptual-trial modes, each with
+            ``template_id``, ``trial_type``, and an ``events`` list of
+            ``{"category", "code", "duration"}`` entries.
+        trials:
+            Explicit fixed sequence of template references (by
+            ``template_id``), used instead of probabilistic sampling.
+        trial_template_probabilities:
+            Sampling probability for each entry in ``trial_templates``, used
+            with ``n_conceptual_trials`` to draw a random trial sequence.
+        n_conceptual_trials:
+            Number of conceptual trials to sample when
+            ``trial_template_probabilities`` drives trial-sequence sampling.
+        seed:
+            Base seed for all deterministic RNG streams derived from this
+            experiment; defaults to ``1234`` if not given.
+        ordertype:
+            Flat-order generation strategy: ``"random"``, ``"blocked"``, or
+            ``"msequence"``.
+        trial_max:
+            Optional informational expected-maximum trial duration (seconds),
+            shown in generated reports; not enforced during scheduling.
         """
         for old_name, replacement in REMOVED_TIMING_ARGUMENTS.items():
             if old_name in kwargs:
@@ -1963,19 +2064,6 @@ class Experiment:
                 schedule_table[-1]["rest_rule_id"] = rest_rule_id
                 cursor += inter_value + rest_value
 
-        legacy_event_aligned_inter_trial = [0.0]
-        for trial_idx in range(len(trial_sequence)):
-            if trial_idx == 0:
-                pass
-            if trial_idx > 0:
-                legacy_event_aligned_inter_trial.extend(
-                    [0.0]
-                    * (
-                        trial_end_event_index[trial_idx]
-                        - trial_start_event_index[trial_idx]
-                        + 1
-                    )
-                )
         legacy_event_aligned_inter_trial = [0.0] * len(order)
         for boundary_trial_idx, inter_value in enumerate(inter_trial_intervals):
             next_event_index = trial_start_event_index[boundary_trial_idx + 1]
@@ -2027,7 +2115,12 @@ class Experiment:
 
 
 class Optimisation:
-    """Run the design search loop for a configured experiment."""
+    """Run the genetic-algorithm design search loop for a configured experiment.
+
+    Typical usage is ``optimisation.optimise()`` followed by
+    ``optimisation.selected_design(0)`` to retrieve the best representative
+    design; see ``MIGRATION_2.0.md`` for the full recommended workflow.
+    """
 
     def __init__(
         self,
@@ -2047,7 +2140,66 @@ class Optimisation:
         max_candidate_attempts: int = 10000,
         optimisation: str = "GA",
     ):
-        """Configure an optimisation run over designs sampled from an experiment."""
+        """Configure an optimisation run over designs sampled from an experiment.
+
+        Parameters
+        ----------
+        experiment:
+            The :class:`Experiment` specification designs are sampled from.
+        weights:
+            Four-element list ``[Fe_weight, Fd_weight, Ff_weight, Fc_weight]``
+            giving the linear combination used for each design's overall
+            score ``F``. A metric with weight ``0`` is not computed (except
+            ``Ff``/``Fc``, which are always computed).
+        preruncycles:
+            Number of generations run in each calibration prerun (one for
+            ``Fe``, one for ``Fd``) used to estimate ``FeMax``/``FdMax``
+            before the main search, when that metric has positive weight.
+        cycles:
+            Number of generations run in the main search after calibration.
+        seed:
+            Base seed for this optimisation's RNG streams; defaults to the
+            parent experiment's seed if not given.
+        I:
+            Number of new immigrant designs freshly sampled and injected each
+            generation (a diversity mechanism), distributed across
+            ``["blocked", "random", "msequence"]`` order types per ``R``.
+        G:
+            Target population size: the number of designs used to seed the
+            initial generation, and the cap each subsequent generation is
+            trimmed down to (keeping the highest-scoring designs) after
+            mutation, crossover, and immigration.
+        R:
+            Three-element list of proportions (default ``[0.4, 0.4, 0.2]``)
+            controlling the mix of ``["blocked", "random", "msequence"]``
+            order-generation strategies used when sampling new candidate
+            designs.
+        q:
+            Mutation rate passed to ``Design.mutation`` when the population is
+            not highly correlated; a fixed, larger mutation rate is used
+            instead when the population has converged (mean pairwise
+            correlation above ``0.6``).
+        Aoptimality:
+            If ``True``, use A-optimality for ``Fe``/``Fd``; otherwise use
+            D-optimality.
+        folder:
+            Optional output directory for reports and exports.
+        outdes:
+            Number of representative designs to select via clustering in
+            :meth:`evaluate`.
+        convergence:
+            Patience, in generations, for early stopping: the search stops
+            after this many consecutive generations with no strict
+            improvement in the generation-best score. ``None`` or ``0``
+            disables early stopping.
+        max_candidate_attempts:
+            Maximum attempts to construct one valid candidate design before
+            raising an error (guards against impossible constraints).
+        optimisation:
+            Search strategy identifier: ``"GA"`` applies mutation, crossover,
+            and immigration each generation; ``"simulation"`` applies only
+            immigration (pure random resampling, no evolutionary operators).
+        """
         self.exp = experiment
         self.weights = weights
         self.preruncycles = preruncycles
@@ -2232,25 +2384,44 @@ class Optimisation:
         n = 0
         rm = 0
         while n == 0:
+            # np.corrcoef collapses to a bare scalar (not a matrix) when
+            # given a single row, so check the population size directly
+            # rather than inferring it from the shape of its output --
+            # removals below can shrink the population to 1 design before
+            # the end-of-function backfill runs.
+            if len(self.designs) <= 1:
+                n = 1
+                continue
             orders = [x.order for x in self.designs]
             cors = np.corrcoef(orders)
             isone = np.isclose(cors, 1.0)
-            if len(isone) == 1:
+            np.fill_diagonal(isone, 0)
+            if np.sum(isone) == 0:
                 n = 1
             else:
-                np.fill_diagonal(isone, 0)
-                if np.sum(isone) == 0:
-                    n = 1
-                else:
-                    ind = np.where(isone)
-                    remove = ind[1][ind[0] == ind[0][0]]
-                    self.designs = [
-                        des for idx, des in enumerate(self.designs) if idx not in remove
-                    ]
-                    rm += len(remove)
+                ind = np.where(isone)
+                remove = ind[1][ind[0] == ind[0][0]]
+                self.designs = [
+                    des for idx, des in enumerate(self.designs) if idx not in remove
+                ]
+                rm += len(remove)
         if rm > 0:
             self.add_new_designs(R=[0, rm, 0], weights=weights)
         return self
+
+    @staticmethod
+    def _derive_seed(seed, *labels) -> int:
+        """Derive a distinct, reproducible sub-seed from ``seed`` and ``labels``.
+
+        ``Design.mutation``/``Design.crossover`` each build their own RNG from
+        a single integer ``seed``. Passing the same ``seed`` straight through
+        for every individual (or pair) in a generation makes every one of
+        them draw an identical random stream, which collapses the intended
+        per-individual variation. Salting ``seed`` with a call-specific label
+        keeps results reproducible for a given ``seed`` while decorrelating
+        different individuals/pairs/operators from one another.
+        """
+        return int(np.random.SeedSequence([seed, *labels]).generate_state(1)[0])
 
     def _mutation(self, weights, seed):
         """Apply mutation to the current generation."""
@@ -2262,11 +2433,10 @@ class Optimisation:
             design = self.designs[idx]
             if design.F == np.max(efficiencies):
                 offspring = design
-            elif mncor > 0.6:
-                offspring = design.mutation(0.2, seed=seed)
-                offspring = self.check_develop(offspring, weights)
             else:
-                offspring = design.mutation(self.q, seed=seed)
+                rate = 0.2 if mncor > 0.6 else self.q
+                mutation_seed = self._derive_seed(seed, 1, idx)
+                offspring = design.mutation(rate, seed=mutation_seed)
                 offspring = self.check_develop(offspring, weights)
             if offspring is not False:
                 self.designs[idx] = offspring
@@ -2281,9 +2451,10 @@ class Optimisation:
         coupling = rng.choice(nparents, size=(npairs * 2), replace=False)
         coupling = [crossind[x] for x in coupling]
         pairing = [[coupling[i], coupling[i + 1]] for i in np.arange(0, npairs * 2, 2)]
-        for couple in pairing:
+        for pair_idx, couple in enumerate(pairing):
+            pair_seed = self._derive_seed(seed, 2, pair_idx)
             baby1, baby2 = self.designs[couple[0]].crossover(
-                self.designs[couple[1]], seed=seed
+                self.designs[couple[1]], seed=pair_seed
             )
             for baby in [baby1, baby2]:
                 baby = self.check_develop(baby, weights)
@@ -2312,6 +2483,18 @@ class Optimisation:
         else:
             self._immigration(weights, noim=self.I)
 
+        # Defense in depth: check_develop() and clear() already reject
+        # non-finite scores at every entry point, but matrix inversions used
+        # by Fe/Fd are sensitive to floating-point rounding, which can differ
+        # under multi-threaded BLAS. Never let a non-finite F reach the
+        # generation-best/cutoff logic below, where it could crash or
+        # silently empty the population.
+        finite_designs = [des for des in self.designs if np.isfinite(des.F)]
+        dropped = len(self.designs) - len(finite_designs)
+        self.designs = finite_designs
+        if dropped > 0:
+            self.add_new_designs(R=[0, dropped, 0], weights=weights)
+
         efficiencies = [x.F for x in self.designs]
         maximum = np.max(efficiencies)
         self.optima.append(maximum)
@@ -2337,12 +2520,28 @@ class Optimisation:
                 f"{convergence_limit} consecutive generation(s)"
             )
         if len(self.designs) > self.G:
-            cutoff = np.sort(efficiencies)[::-1][self.G]
+            # Index self.G - 1 (not self.G): sorted descending, that's the
+            # G-th largest score, so keeping F >= cutoff retains exactly the
+            # top G designs. Indexing self.G would keep the (G+1)-th
+            # largest as the cutoff, retaining G + 1 designs instead of G.
+            cutoff = np.sort(efficiencies)[::-1][self.G - 1]
             self.designs = [des for des in self.designs if des.F >= cutoff]
         return self
 
-    def clear(self):
-        """Reset the current population while preserving the last best design."""
+    def clear(self, weights=None):
+        """Reset the current population while preserving the last best design.
+
+        The preserved design's cached ``F``/``Fe``/``Fd``/``Fc``/``Ff`` were
+        computed under whichever weight vector was active in the phase that
+        just ended (e.g. a Fe-only or Fd-only calibration prerun). Comparing
+        that stale score directly against designs freshly scored under a
+        different weight vector is invalid -- component scores live on
+        different numeric scales, so a leftover Fe-phase score can spuriously
+        outrank every real candidate in a following Fd-phase (or vice versa).
+        Rescoring the preserved design under ``weights`` (the vector that
+        will govern the upcoming phase, defaulting to ``self.weights``)
+        keeps it on the same footing as the rest of the population.
+        """
         previous_best = self.bestdesign
         self.designs = []
         self.optima = []
@@ -2354,15 +2553,53 @@ class Optimisation:
         self.generations_completed = 0
         self._stagnation_generations = 0
         if previous_best:
-            self.designs.append(previous_best)
+            previous_best.FCalc(
+                self.weights if weights is None else weights,
+                confoundorder=self.exp.confoundorder,
+                Aoptimality=self.Aoptimality,
+            )
+            component_scores = np.array(
+                [
+                    previous_best.Fe,
+                    previous_best.Fd,
+                    previous_best.Ff,
+                    previous_best.Fc,
+                    previous_best.F,
+                ],
+                dtype=float,
+            )
+            # Match check_develop()'s safety guard: a non-finite rescored
+            # score (e.g. from an ill-conditioned matrix inversion) must not
+            # silently poison the next population -- a NaN/inf F sorts as
+            # the maximum and can make every real candidate compare False
+            # against it, emptying the population.
+            if np.all(np.isfinite(component_scores)):
+                self.designs.append(previous_best)
         return self
 
     def optimise(self):
-        """Run the full optimisation procedure, including normalization passes."""
+        """Run the full optimisation procedure, including normalization passes.
+
+        If ``Fc``/``Ff`` are uncalibrated (``FcMax``/``FfMax`` left at ``1``),
+        they are calibrated analytically first. If ``Fe``/``Fd`` have positive
+        weight and are uncalibrated (``FeMax``/``FdMax`` left at ``1``), a
+        short ``preruncycles``-generation prerun optimising that metric alone
+        is run to estimate its calibration reference. The main search then
+        runs for ``cycles`` generations (or until ``convergence`` triggers
+        early stopping).
+
+        Returns
+        -------
+        Optimisation
+            ``self``, with ``designs`` holding the final generation and
+            ``bestdesign`` holding the single highest-scoring design found.
+            Call :meth:`evaluate` (or :meth:`selected_design`, which calls it
+            automatically) to obtain clustered representative outputs.
+        """
         if self.exp.FcMax == 1 and self.exp.FfMax == 1:
             self.exp.max_eff()
         if self.exp.FeMax == 1 and self.weights[0] > 0:
-            self.clear()
+            self.clear(weights=[1, 0, 0, 0])
             self.add_new_designs(weights=[1, 0, 0, 0])
             with progress_bar(text="Optimizing") as progress:
                 task = progress.add_task(
@@ -2375,7 +2612,7 @@ class Optimisation:
                         break
             self.exp.FeMax = float(np.max(self.bestdesign.F))
         if self.exp.FdMax == 1 and self.weights[1] > 0:
-            self.clear()
+            self.clear(weights=[0, 1, 0, 0])
             self.add_new_designs(weights=[0, 1, 0, 0])
             with progress_bar(text="Optimizing") as progress:
                 task = progress.add_task(
@@ -2401,7 +2638,27 @@ class Optimisation:
         return self
 
     def selected_design(self, rank: int = 0):
-        """Return one evaluated representative design from the current selected outputs."""
+        """Return one evaluated representative design from the current selected outputs.
+
+        This is the recommended public entry point for retrieving a design
+        after :meth:`optimise`; it calls :meth:`evaluate` automatically the
+        first time it is needed.
+
+        Parameters
+        ----------
+        rank:
+            Index into the ``outdes`` clustered representative designs
+            (0-indexed). Each cluster's representative is the
+            highest-scoring design within that cluster; clusters are not
+            necessarily ordered by score, so ``rank=0`` is one representative
+            design rather than guaranteed to be the single global best (use
+            ``bestdesign`` for that).
+
+        Returns
+        -------
+        Design
+            The representative design for the requested cluster rank.
+        """
         if self.bestdesign is None or not self.designs:
             raise RuntimeError(
                 "selected_design() requires optimise() to run before selecting outputs"
@@ -2413,7 +2670,22 @@ class Optimisation:
         return self.designs[self.out[rank]]
 
     def evaluate(self):
-        """Cluster final designs and choose representative reported outputs."""
+        """Cluster final designs and choose representative reported outputs.
+
+        Clusters the final generation's designs into ``outdes`` groups via
+        k-means on their convolved design matrices, then within each cluster
+        keeps the highest-scoring design as that cluster's representative.
+        Reorders ``self.designs`` so cluster representatives are retrievable
+        via ``self.out`` (populated here) and :meth:`selected_design`.
+
+        Returns
+        -------
+        Optimisation
+            ``self``, with ``designs`` reordered by cluster, ``out`` holding
+            each cluster's representative-design index, ``clus`` holding each
+            reordered design's cluster label, and ``cov`` holding the
+            pairwise design-signal correlation matrix.
+        """
         if self.bestdesign is None or not self.designs:
             raise RuntimeError(
                 "evaluate() requires optimise() to run before selecting outputs"

@@ -244,7 +244,7 @@ from neurodesign import Experiment, Optimisation, report
 exp = Experiment(...)
 opt = Optimisation(
     experiment=exp,
-    weights=[0.0, 0.5, 0.25, 0.25],
+    weights=[0.0, 0.5, 0.25, 0.25],  # order: Fe, Fd, Ff, Fc
     preruncycles=1,
     cycles=2,
     seed=101,

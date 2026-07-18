@@ -83,4 +83,4 @@ jobs:
         -   name: Install validation dependencies
             run: python -m pip install ".[doc,test]"
         -   name: Run aggregate validation
-            run: python -m validation.run_all
+            run: python -m validation.run_all_validation_workflows

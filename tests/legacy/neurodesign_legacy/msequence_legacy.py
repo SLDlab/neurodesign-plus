@@ -547,7 +547,7 @@ class Msequence:
 
     @staticmethod
     def qadd(a, b, base):
-        """Add two elements of the Galois field of the given ``base`` via lookup table."""
+
         if a >= base or b >= base:
             print(f"qadd(a,b), a and b must be < {base}")
 
@@ -595,7 +595,7 @@ class Msequence:
 
     @staticmethod
     def qmult(a, b, base):
-        """Multiply two elements of the Galois field of the given ``base`` via lookup table."""
+
         if a >= base or b >= base:
             print(f"qadd(a,b), a and b must be < {base}")
 

@@ -53,7 +53,7 @@ WORKFLOWS = [
     {
         "name": "case10_comparison",
         "kind": "maintained release validation",
-        "command": ["-m", "validation.run_case10_v2"],
+        "command": ["-m", "validation.compare_case10_v1_vs_v2"],
         "assertion_summary": "Builds the canonical Case 10 tutorial and manuscript-support comparison against stable version-1 fixtures.",
         "artifact_subdir": "case10_comparison",
         "ci": False,
@@ -63,7 +63,7 @@ WORKFLOWS = [
         "kind": "manuscript-support generator",
         "command": [
             "-m",
-            "validation.manuscript_support.generate_tutorial3_case10_v2_package",
+            "validation.manuscript_support.generate_case10_manuscript_figures",
         ],
         "assertion_summary": "Regenerates the canonical manuscript-support Case 10 package, report, exports, and figures.",
         "artifact_subdir": "manuscript_support",
