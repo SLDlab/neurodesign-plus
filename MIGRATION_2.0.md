@@ -115,7 +115,7 @@ event_durations = 1.0
 Equivalent explicit form:
 
 ```python
-event_durations = {"model": "fixed", "mean": 1.0}
+event_durations = {"model": "fixed", "value": 1.0}
 ```
 
 Supported rule models:

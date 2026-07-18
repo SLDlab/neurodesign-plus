@@ -176,7 +176,7 @@ Use `"default"` only inside selector wrappers that support it.
 A scalar `x` normalizes to:
 
 ```python
-{"model": "fixed", "mean": x}
+{"model": "fixed", "value": x}
 ```
 
 Supported models:
@@ -191,7 +191,7 @@ Bounded exponential and Gaussian rules use true truncated distributions. For bou
 Supported public rule shapes:
 
 ```python
-{"model": "fixed", "mean": value}
+{"model": "fixed", "value": value}
 {"model": "uniform", "min": a, "max": b}
 {"model": "uniform", "min": a, "mean": (a + b) / 2, "max": b}
 {"model": "exponential", "mean": m}

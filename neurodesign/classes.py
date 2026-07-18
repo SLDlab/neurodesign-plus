@@ -165,7 +165,7 @@ class NormalizedRule:
         """Return a JSON-friendly representation of the normalized rule."""
         out = {"model": self.model}
         if self.mean is not None:
-            out["mean"] = self.mean
+            out["value" if self.model == "fixed" else "mean"] = self.mean
         if self.min is not None:
             out["min"] = self.min
         if self.max is not None:
@@ -193,9 +193,9 @@ class SelectorSpec:
         return out
 
 
-def _validate_fixed_rule(arg_name: str, mean: Any) -> NormalizedRule:
+def _validate_fixed_rule(arg_name: str, value: Any) -> NormalizedRule:
     """Normalize a scalar timing specification into a fixed rule."""
-    return NormalizedRule(model="fixed", mean=_ensure_non_negative(arg_name, mean))
+    return NormalizedRule(model="fixed", mean=_ensure_non_negative(arg_name, value))
 
 
 @functools.cache
@@ -314,9 +314,9 @@ def normalize_rule(spec: Any, arg_name: str) -> NormalizedRule | SelectorSpec:
             f"{arg_name} dictionary is ambiguous; use a scalar, a {{'model': ...}} rule, or a selector wrapper"
         )
     if model == "fixed":
-        if "mean" not in spec:
-            raise ValueError(f"{arg_name} fixed rule requires 'mean'")
-        return _validate_fixed_rule(arg_name, spec["mean"])
+        if "value" not in spec:
+            raise ValueError(f"{arg_name} fixed rule requires 'value'")
+        return _validate_fixed_rule(arg_name, spec["value"])
     if model == "uniform":
         if "min" not in spec or "max" not in spec:
             raise ValueError(f"{arg_name} uniform rule requires 'min' and 'max'")
@@ -924,7 +924,7 @@ class Experiment:
             ``event_durations`` is also given.
         event_durations:
             Duration rule for modeled events: a scalar, a rule dict (for
-            example ``{"model": "fixed", "mean": 1.0}``), or a selector
+            example ``{"model": "fixed", "value": 1.0}``), or a selector
             keyed by event category. Ignored for template modes, where each
             template event carries its own ``duration``.
         trial_start_interval, post_event_interval, event_transition_interval,
@@ -1210,7 +1210,7 @@ class Experiment:
         if self.rest_every_n_trials is None and self.rest_interval_requested not in (
             0,
             0.0,
-            {"model": "fixed", "mean": 0.0},
+            {"model": "fixed", "value": 0.0},
         ):
             if not (
                 isinstance(self.rest_interval_requested, (int, float))
