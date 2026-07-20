@@ -735,7 +735,15 @@ class Design:
         try:
             invM = scipy.linalg.inv(self.X)
         except scipy.linalg.LinAlgError:
-            invM = scipy.linalg.pinv(self.X)
+            try:
+                invM = scipy.linalg.pinv(self.X)
+            except scipy.linalg.LinAlgError:
+                # self.X (Xwhite) is symmetric by construction (A^T W A); when
+                # pinv's general SVD fails to converge on a near-singular
+                # matrix (platform/LAPACK-dependent), the symmetric
+                # eigendecomposition-based pseudo-inverse is a numerically
+                # more stable equivalent for this case.
+                invM = scipy.linalg.pinvh(self.X)
         invM = np.array(invM)
         CMC = np.dot(np.dot(self.CX, invM), t(self.CX))
         if Aoptimality:
@@ -750,7 +758,13 @@ class Design:
         try:
             invM = scipy.linalg.inv(self.Z)
         except scipy.linalg.LinAlgError:
-            invM = scipy.linalg.pinv(self.Z)
+            try:
+                invM = scipy.linalg.pinv(self.Z)
+            except scipy.linalg.LinAlgError:
+                # See FeCalc: self.Z (Zwhite) is symmetric by construction,
+                # so fall back to the eigendecomposition-based pseudo-inverse
+                # when general-SVD pinv fails to converge.
+                invM = scipy.linalg.pinvh(self.Z)
         invM = np.array(invM)
         CMC = self.C @ invM @ t(self.C)
         if Aoptimality:
