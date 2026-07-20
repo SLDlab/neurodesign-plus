@@ -1,0 +1,590 @@
+{
+  "source": {
+    "script": "validation/manuscript_support/generate_tutorial3_case10_nontrivial_package.py",
+    "global_seed_constant": 12,
+    "optimisation_seed": 20260704
+  },
+  "case_type": "manuscript_support_case10",
+  "experiment_spec": {
+    "TR": 1.0,
+    "n_trials": 34,
+    "P": [
+      0.18,
+      0.12,
+      0.16,
+      0.12,
+      0.1,
+      0.1,
+      0.22
+    ],
+    "C": [
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        1,
+        -1,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        -1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "n_stimuli": 7,
+    "rho": 0.3,
+    "stim_duration": 0.8,
+    "stimuli_durations": [
+      0.8,
+      0.8,
+      {
+        "model": "uniform",
+        "mean": 1.6,
+        "min": 1.0,
+        "max": 2.2
+      },
+      {
+        "model": "uniform",
+        "mean": 1.6,
+        "min": 1.0,
+        "max": 2.2
+      },
+      0.7,
+      0.9,
+      1.0
+    ],
+    "t_pre": 0.0,
+    "t_post": 0.0,
+    "ITImodel": "uniform",
+    "ITImin": 0.2,
+    "ITImax": 1.9,
+    "ITImean": 0.9,
+    "conditional_ITI": {
+      "default": {
+        "model": "uniform",
+        "mean": 0.7,
+        "min": 0.3,
+        "max": 1.0
+      },
+      "(0, 2)": {
+        "model": "uniform",
+        "mean": 0.7,
+        "min": 0.3,
+        "max": 1.0
+      },
+      "(1, 4)": {
+        "model": "uniform",
+        "mean": 0.6,
+        "min": 0.3,
+        "max": 0.9
+      },
+      "(4, 3)": {
+        "model": "uniform",
+        "mean": 0.5,
+        "min": 0.2,
+        "max": 0.8
+      },
+      "(0, 5)": {
+        "model": "uniform",
+        "mean": 0.5,
+        "min": 0.2,
+        "max": 0.8
+      },
+      "(5, 2)": {
+        "model": "uniform",
+        "mean": 0.6,
+        "min": 0.3,
+        "max": 0.9
+      },
+      "(2, 6)": {
+        "model": "uniform",
+        "mean": 0.4,
+        "min": 0.2,
+        "max": 0.7
+      },
+      "(3, 6)": {
+        "model": "uniform",
+        "mean": 0.4,
+        "min": 0.2,
+        "max": 0.7
+      },
+      "(6, 0)": {
+        "model": "uniform",
+        "mean": 1.5,
+        "min": 1.0,
+        "max": 1.9
+      },
+      "(6, 1)": {
+        "model": "uniform",
+        "mean": 1.5,
+        "min": 1.0,
+        "max": 1.9
+      }
+    },
+    "order_probabilities": [
+      0.4,
+      0.35,
+      0.25
+    ],
+    "order_keys": [
+      [
+        0,
+        2,
+        6
+      ],
+      [
+        1,
+        4,
+        3,
+        6
+      ],
+      [
+        0,
+        5,
+        2,
+        6
+      ]
+    ],
+    "order_length": 34,
+    "trial_max": 2.2
+  },
+  "optimisation_spec": {
+    "weights": [
+      0.0,
+      0.5,
+      0.25,
+      0.25
+    ],
+    "preruncycles": 4,
+    "cycles": 12,
+    "seed": 20260704,
+    "outdes": 3,
+    "optimisation": "GA",
+    "G": 12,
+    "I": 4
+  },
+  "selected_order": [
+    0,
+    5,
+    2,
+    6,
+    0,
+    2,
+    6,
+    0,
+    2,
+    6,
+    1,
+    4,
+    3,
+    6,
+    0,
+    2,
+    6,
+    1,
+    4,
+    3,
+    6,
+    1,
+    4,
+    3,
+    6,
+    0,
+    5,
+    2,
+    6,
+    1,
+    4,
+    3,
+    6,
+    1
+  ],
+  "selected_ITI": [
+    0.6000000000000001,
+    0.30000000000000004,
+    0.7000000000000001,
+    0.30000000000000004,
+    1.7000000000000002,
+    0.7000000000000001,
+    0.6000000000000001,
+    0.30000000000000004,
+    1.4000000000000001,
+    0.6000000000000001,
+    0.5,
+    0.2,
+    1.8,
+    0.5,
+    0.7000000000000001,
+    0.5,
+    1.4000000000000001,
+    0.7000000000000001,
+    0.6000000000000001,
+    1.7000000000000002,
+    0.7000000000000001,
+    0.5,
+    0.30000000000000004,
+    1.2000000000000002,
+    0.7000000000000001,
+    0.4,
+    1.3,
+    0.4,
+    0.4,
+    0.6000000000000001,
+    1.7000000000000002,
+    0.9,
+    0.5,
+    1.0
+  ],
+  "selected_all_stim_durations": [
+    0.8,
+    0.9,
+    1.9495209947064147,
+    1.0,
+    0.8,
+    1.861154058711998,
+    1.0,
+    0.8,
+    1.1849986360874396,
+    1.0,
+    0.8,
+    0.7,
+    1.1573129721286028,
+    1.0,
+    0.8,
+    2.1892645694952764,
+    1.0,
+    0.8,
+    0.7,
+    1.8623479786282695,
+    1.0,
+    0.8,
+    0.7,
+    1.2990644646087066,
+    1.0,
+    0.8,
+    0.9,
+    2.1357386111623926,
+    1.0,
+    0.8,
+    0.7,
+    2.1795574525079333,
+    1.0,
+    0.8
+  ],
+  "selected_onsets": [
+    0.6000000000000001,
+    1.7000000000000006,
+    3.3000000000000007,
+    5.549520994706415,
+    8.249520994706415,
+    9.749520994706417,
+    12.210675053418415,
+    13.510675053418414,
+    15.710675053418417,
+    17.495673689505857,
+    18.995673689505857,
+    19.995673689505857,
+    22.495673689505853,
+    24.152986661634458,
+    25.852986661634457,
+    27.152986661634458,
+    30.742251231129735,
+    32.44225123112974,
+    33.84225123112973,
+    36.24225123112973,
+    38.804599209758,
+    40.304599209758,
+    41.404599209758,
+    43.304599209758,
+    45.30366367436671,
+    46.703663674366716,
+    48.80366367436672,
+    50.103663674366715,
+    52.63940228552911,
+    54.23940228552911,
+    56.7394022855291,
+    58.339402285529104,
+    61.01895973803704,
+    63.01895973803704
+  ],
+  "trial_ids": [
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    2,
+    2,
+    2,
+    3,
+    3,
+    3,
+    3,
+    4,
+    4,
+    4,
+    5,
+    5,
+    5,
+    5,
+    6,
+    6,
+    6,
+    6,
+    7,
+    7,
+    7,
+    7,
+    8,
+    8,
+    8,
+    8,
+    9
+  ],
+  "sampled_templates": [
+    {
+      "trial_id": 0,
+      "template_index": 2,
+      "template": [
+        0,
+        5,
+        2,
+        6
+      ],
+      "complete": true
+    },
+    {
+      "trial_id": 1,
+      "template_index": 0,
+      "template": [
+        0,
+        2,
+        6
+      ],
+      "complete": true
+    },
+    {
+      "trial_id": 2,
+      "template_index": 0,
+      "template": [
+        0,
+        2,
+        6
+      ],
+      "complete": true
+    },
+    {
+      "trial_id": 3,
+      "template_index": 1,
+      "template": [
+        1,
+        4,
+        3,
+        6
+      ],
+      "complete": true
+    },
+    {
+      "trial_id": 4,
+      "template_index": 0,
+      "template": [
+        0,
+        2,
+        6
+      ],
+      "complete": true
+    },
+    {
+      "trial_id": 5,
+      "template_index": 1,
+      "template": [
+        1,
+        4,
+        3,
+        6
+      ],
+      "complete": true
+    },
+    {
+      "trial_id": 6,
+      "template_index": 1,
+      "template": [
+        1,
+        4,
+        3,
+        6
+      ],
+      "complete": true
+    },
+    {
+      "trial_id": 7,
+      "template_index": 2,
+      "template": [
+        0,
+        5,
+        2,
+        6
+      ],
+      "complete": true
+    },
+    {
+      "trial_id": 8,
+      "template_index": 1,
+      "template": [
+        1,
+        4,
+        3,
+        6
+      ],
+      "complete": true
+    },
+    {
+      "trial_id": 9,
+      "template_index": 1,
+      "template": [
+        1,
+        4,
+        3,
+        6
+      ],
+      "complete": false
+    }
+  ],
+  "boundary_note": {
+    "truncated": true,
+    "remaining_suffix": [
+      1
+    ],
+    "matched_template_index": 1,
+    "matched_template": [
+      1,
+      4,
+      3,
+      6
+    ],
+    "kept_from_boundary_template": [
+      1
+    ],
+    "omitted_from_boundary_template": [
+      4,
+      3,
+      6
+    ],
+    "ambiguous_partial_match": false
+  },
+  "metrics": {
+    "F": 0.8588007347916642,
+    "Fe": 463.9475744400325,
+    "Fd": 1.1196829175471292,
+    "Ff": 0.9006535947712418,
+    "Fc": 0.29518350930115633
+  },
+  "population_trace": [
+    0.8066817496229262,
+    0.8066817496229262,
+    0.8066817496229262,
+    0.8344086028290632,
+    0.8344086028290632,
+    0.8584595353845772,
+    0.8588007347916642,
+    0.8588007347916642,
+    0.8588007347916642,
+    0.8588007347916642,
+    0.8588007347916642,
+    0.8588007347916642
+  ],
+  "experiment_summary": {
+    "duration": 110.50000000000001,
+    "n_scans": 111,
+    "n_tp": 1105,
+    "trial_duration": 2.2,
+    "trial_max": 2.2,
+    "FeMax": 1,
+    "FdMax": 0.06328790110303288,
+    "FcMax": 198.89999999999998,
+    "FfMax": 61.2
+  },
+  "report_dir": "C:\\Users\\vguigon\\Desktop\\Research_directory\\Lab_SLD\\neurodesign-plus\\validation\\phase1_baseline_2026-07-05\\case10_manuscript_support\\download_bundle",
+  "report_pdf": "C:\\Users\\vguigon\\Desktop\\Research_directory\\Lab_SLD\\neurodesign-plus\\validation\\phase1_baseline_2026-07-05\\case10_manuscript_support\\download_bundle\\report.pdf",
+  "render_info": {
+    "rendered": true,
+    "error": null,
+    "pages": [
+      "C:\\Users\\vguigon\\Desktop\\Research_directory\\Lab_SLD\\neurodesign-plus\\validation\\phase1_baseline_2026-07-05\\case10_manuscript_support\\report_page-1.png",
+      "C:\\Users\\vguigon\\Desktop\\Research_directory\\Lab_SLD\\neurodesign-plus\\validation\\phase1_baseline_2026-07-05\\case10_manuscript_support\\report_page-2.png",
+      "C:\\Users\\vguigon\\Desktop\\Research_directory\\Lab_SLD\\neurodesign-plus\\validation\\phase1_baseline_2026-07-05\\case10_manuscript_support\\report_page-3.png",
+      "C:\\Users\\vguigon\\Desktop\\Research_directory\\Lab_SLD\\neurodesign-plus\\validation\\phase1_baseline_2026-07-05\\case10_manuscript_support\\report_page-4.png"
+    ]
+  }
+}

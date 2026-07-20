@@ -4,6 +4,24 @@ examples/output
 neurodesign/_version.py
 
 .vscode
+.agents/
+.claude/
+.suplex/
+AGENTS.md
+CLAUDE.md
+SUPLEX.md
+.venv/
+.pytest_cache/
+build/
+output/
+manuscript/
+validation/_artifacts/
+validation/**/*.pyc
+validation/**/__pycache__/
+neurodesign/__pycache__/
+tests/**/__pycache__/
+docs/_build/
+dist/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -94,3 +112,5 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+.tmp_precommit/

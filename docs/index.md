@@ -1,23 +1,21 @@
-# neurodesign-plus
+# neurodesign-plus 2.0
 
-**Extended and maintained fork of the neurodesign package for fMRI experimental design optimisation.**
+**Trial-aware fMRI experimental design optimisation for flat one-event and multi-event conceptual trials.**
 
-`neurodesign-plus` extends the original [neurodesign](https://github.com/neuropower/neurodesign) package with support for variable stimulus durations, conditional inter-trial intervals, user-defined stimulus ordering, and probabilistic ordering.
+`neurodesign-plus` is the install distribution.
+`neurodesign` is the Python import package.
 
-## Quick Install
+Version 2.0 keeps the public classes `Experiment`, `Design`, and `Optimisation`, but the active teaching surface is now trial-aware:
 
-```bash
-pip install neurodesign-plus
-```
+- conceptual trials can contain one or more modeled events
+- flat `order` inputs are shorthand for one-event conceptual trials
+- fixed workflows use complete trial templates
+- probabilistic workflows sample complete templates for `n_conceptual_trials`
+- timing is separated into event, within-trial, between-trial, and optional rest roles
+- requested specifications, normalized rules, and realized timing arrays remain distinct
 
-## Key Features
-
-- **Genetic algorithm optimisation** of fMRI experimental designs
-- **Variable stimulus durations** -- specify per-condition distribution-based durations
-- **Conditional ITIs** -- inter-trial intervals that depend on stimulus transitions
-- **Fixed or probabilistic ordering** -- inject user-defined or probability-sampled stimulus orders
-- **Four efficiency metrics** -- Estimation (Fe), Detection (Fd), Confounding (Fc), Frequency (Ff)
-- **PDF reports** -- automatic generation of optimisation result summaries
+Version 2.0 is intentionally source-breaking.
+For legacy-to-current mapping, use the [migration guide](migration.md).
 
 ```{toctree}
 :maxdepth: 2
@@ -25,6 +23,7 @@ pip install neurodesign-plus
 
 installation
 getting_started
+migration
 metrics
 new_features
 ```

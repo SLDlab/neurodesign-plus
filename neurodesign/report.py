@@ -44,7 +44,7 @@ with each other to find better combinations.
 As such, the designs can look very similar.
 Actually, the genetic algorithm uses natural selection as a basis,
 and as such, the designs can be clustered in families.
-This is the covariance matrix between the final population of {population.G} designs."""
+This is the design-to-design correlation matrix for the final population of {population.G} designs."""
     designs = f"""The following figure shows in the upper panel the optimisation score
 over the {len(population.optima)} generations in the final optimisation run.
 Below are the expected signals of the selected representative designs
@@ -67,7 +67,23 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
         return y - height
 
     def _styled_table(rows, col_widths):
-        table = Table(rows, colWidths=col_widths)
+        # Wrap plain-string cells (e.g. row labels) in a Paragraph so long
+        # text wraps within its column instead of overflowing into the
+        # next one -- only _table_text()'s value cells were wrapped before,
+        # so a long label (e.g. "Convergence patience (stagnant
+        # generations):") could visually collide with its value.
+        wrapped_rows = [
+            [
+                (
+                    cell
+                    if isinstance(cell, Paragraph)
+                    else Paragraph(str(cell), styles["BodyText"])
+                )
+                for cell in row
+            ]
+            for row in rows
+        ]
+        table = Table(wrapped_rows, colWidths=col_widths)
         table.setStyle(
             TableStyle(
                 [
@@ -88,7 +104,7 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
     corr_im = corr_ax.imshow(
         population.cov, interpolation="nearest", clim=(-1, 1), cmap="RdBu"
     )
-    corr_ax.set_title("Covariance matrix of final designs")
+    corr_ax.set_title("Correlation matrix of final designs")
     corr_fig.colorbar(corr_im, ax=corr_ax, ticks=[-1, 0, 1])
     corr_path = _save_figure(corr_fig)
     plt.close(corr_fig)
@@ -100,7 +116,10 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
     generations = np.arange(1, len(population.optima) + 1)
     score_ax.plot(generations, population.optima, color="#1f5a91", lw=2)
     if len(generations) > 0:
-        score_ax.set_xlim(1, len(generations))
+        if len(generations) == 1:
+            score_ax.set_xlim(0.5, 1.5)
+        else:
+            score_ax.set_xlim(1, len(generations))
         tick_step = max(1, int(np.ceil(len(generations) / 10)))
         score_ax.set_xticks(generations[::tick_step])
     score_ax.set_xlabel("Generation")
@@ -190,43 +209,42 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
     probability_text = _table_text(population.exp.P)
     contrast_text = _table_text(population.exp.C)
     weight_text = _table_text(population.weights)
+    spec = population.exp.export_specification()
 
-    if population.exp.order_fixed:
-        order_mode = "Fixed order"
-        order_details = population.exp.order
-    elif population.exp.order_probabilities is not None:
-        order_mode = "Probability-based order sampling"
-        order_details = {
-            "probabilities": population.exp.order_probabilities,
-            "keys": population.exp.order_keys,
-            "length": population.exp.order_length,
-        }
-    else:
-        order_mode = "Genetic crossover/mutation order optimisation"
-        order_details = "No fixed order constraints"
+    mode_labels = {
+        "flat_generated": "Flat one-event generated order",
+        "flat_fixed_order": "Flat one-event fixed order",
+        "fixed_trials": "Fixed conceptual-trial sequence",
+        "template_sampled": "Probabilistic conceptual-trial templates",
+    }
+    order_mode = mode_labels.get(population.exp.mode, population.exp.mode)
+    order_details = {
+        "order": spec["order"],
+        "trial_templates": spec["trial_templates"],
+        "trials": spec["trials"],
+        "trial_template_probabilities": spec["trial_template_probabilities"],
+        "n_conceptual_trials": spec["n_conceptual_trials"],
+    }
 
-    if population.exp.stimuli_durations is None:
-        stim_duration_mode = "Fixed stimulus duration"
-        stim_duration_details = population.exp.stim_duration
-    else:
-        stim_duration_mode = "Variable by stimulus"
-        stim_duration_details = population.exp.stimuli_durations
-
-    if population.exp.conditional_ITI is None:
-        iti_mode = population.exp.ITImodel
-        iti_details = {
-            "min": population.exp.ITImin,
-            "mean": population.exp.ITImean,
-            "max": population.exp.ITImax,
-        }
-    else:
-        iti_mode = "Conditional ITI"
-        iti_details = population.exp.conditional_ITI
+    stim_duration_mode = "Event duration specifications"
+    stim_duration_details = spec["event_durations_requested"]
+    iti_mode = "Inter-trial interval"
+    iti_details = spec["inter_trial_interval_requested"]
+    conceptual_trials = spec["n_conceptual_trials"]
+    selected_design = (
+        population.designs[selected_indices[0]] if selected_indices else None
+    )
+    modeled_events = (
+        len(getattr(selected_design, "order", []))
+        if selected_design is not None
+        else None
+    )
 
     exp = [
         ["Setting", "Value"],
         ["Repetition time (TR):", _table_text(population.exp.TR)],
-        ["Number of trials:", _table_text(population.exp.n_trials)],
+        ["Conceptual trial count:", _table_text(conceptual_trials)],
+        ["Modeled event count:", _table_text(modeled_events)],
         ["Number of scans:", _table_text(population.exp.n_scans)],
         ["Number of different stimuli:", _table_text(population.exp.n_stimuli)],
         ["Stimulus probabilities:", probability_text],
@@ -236,18 +254,22 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
         ["Stimulus duration details:", _table_text(stim_duration_details)],
         ["Base stimulus duration (s):", _table_text(population.exp.stim_duration)],
         ["Trial container max (s):", _table_text(population.exp.trial_max)],
-        ["Seconds before stimulus (in trial):", _table_text(population.exp.t_pre)],
-        ["Seconds after stimulus (in trial):", _table_text(population.exp.t_post)],
+        [
+            "Trial-start interval spec:",
+            _table_text(spec["trial_start_interval_requested"]),
+        ],
+        ["Post-event interval spec:", _table_text(spec["post_event_interval_requested"])],
+        [
+            "Event-transition interval spec:",
+            _table_text(spec["event_transition_interval_requested"]),
+        ],
         ["Expected trial duration (s):", _table_text(population.exp.trial_duration)],
         ["Total experiment duration (s):", _table_text(population.exp.duration)],
-        ["Number of stimuli between rest blocks:", _table_text(population.exp.restnum)],
-        ["Duration of rest blocks (s):", _table_text(population.exp.restdur)],
+        ["Rest cadence (trials):", _table_text(population.exp.rest_every_n_trials)],
+        ["Rest interval spec:", _table_text(spec["rest_interval_requested"])],
         ["Contrasts:", contrast_text],
-        ["ITI generation:", _table_text(iti_mode)],
-        ["ITI details:", _table_text(iti_details)],
-        ["Minimum ITI:", _table_text(population.exp.ITImin)],
-        ["Mean ITI:", _table_text(population.exp.ITImean)],
-        ["Maximum ITI:", _table_text(population.exp.ITImax)],
+        ["Inter-trial interval mode:", _table_text(iti_mode)],
+        ["Inter-trial interval details:", _table_text(iti_details)],
         ["Hard probabilities:", _table_text(population.exp.hardprob)],
         ["Maximum number of repeated stimuli:", _table_text(population.exp.maxrep)],
         ["Resolution of design:", _table_text(population.exp.resolution)],
@@ -258,7 +280,7 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
     intro = "Experimental settings"
     body_story.append(Paragraph(intro, styles["Heading2"]))
     body_story.append(Spacer(1, 12))
-    body_story.append(_styled_table(exp, [190, 322]))
+    body_story.append(_styled_table(exp, [266, 266]))
 
     optset = "Optimalisation settings"
     body_story.append(Paragraph(optset, styles["Heading2"]))
@@ -271,14 +293,26 @@ Each row also reports the weighted score and the component metrics (Fe, Fd, Ff, 
         ["Number of designs in each generation:", _table_text(population.G)],
         ["Number of immigrants in each generation:", _table_text(population.I)],
         ["Confounding order:", _table_text(population.exp.confoundorder)],
-        ["Convergence criterion:", _table_text(population.convergence)],
+        [
+            "Convergence patience (stagnant generations):",
+            _table_text(
+                "disabled"
+                if population.convergence in {None, 0}
+                else population.convergence
+            ),
+        ],
+        ["Completed generations:", _table_text(population.generations_completed)],
+        [
+            "Stop reason:",
+            _table_text(population.stop_reason or "completed planned generations"),
+        ],
         ["Number of precycles:", _table_text(population.preruncycles)],
         ["Number of cycles:", _table_text(population.cycles)],
         ["Percentage of mutations:", _table_text(population.q)],
         ["Seed:", _table_text(population.seed)],
     ]
 
-    body_story.append(_styled_table(opt, [190, 322]))
+    body_story.append(_styled_table(opt, [266, 266]))
 
     summary_rows = [["Selection", "Final design", "Cluster", "F", "Fe", "Fd", "Ff", "Fc"]]
     for rank, final_idx in enumerate(selected_indices, start=1):

@@ -1,11 +1,12 @@
 """Sphinx configuration for neurodesign-plus documentation."""
 
 import importlib.metadata
+import os
 
 # -- Project information -----------------------------------------------------
 project = "neurodesign-plus"
-copyright = "2016-2026, Joke Durnez, Atharv Umap, Valentin Guigon"
-author = "Joke Durnez, Atharv Umap, Valentin Guigon"
+copyright = "2026, Atharv Amar Umap, Caroline J. Charpentier, Valentin Guigon"
+author = "Atharv Amar Umap, Caroline J. Charpentier, Valentin Guigon"
 
 # Version from installed package metadata
 try:
@@ -63,6 +64,9 @@ intersphinx_mapping = {
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
     "sklearn": ("https://scikit-learn.org/stable/", None),
 }
+if os.environ.get("NEURODESIGN_DOCS_OFFLINE") == "1":
+    extensions = [ext for ext in extensions if ext != "sphinx.ext.intersphinx"]
+    intersphinx_mapping = {}
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "furo"
@@ -83,7 +87,7 @@ latex_documents = [
         "index",
         "neurodesign-plus.tex",
         "neurodesign-plus Documentation",
-        "Joke Durnez, Atharv Umap, Valentin Guigon",
+        "Atharv Amar Umap, Caroline J. Charpentier, Valentin Guigon",
         "manual",
     ),
 ]

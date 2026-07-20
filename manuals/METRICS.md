@@ -1,214 +1,178 @@
-# Neurodesign Efficiency Metrics: A Complete Guide
+# Neurodesign-Plus 2.0 Metrics Guide
 
-Neurodesign optimizes fMRI experimental designs by evaluating them on four efficiency metrics. This document explains what each metric measures, how they are computed, how normalization works, and — critically — when you can and cannot compare metric values across different experimental setups.
+## Scope
 
-## Overview
+Version 2.0 keeps the four public design metrics:
 
-Neurodesign separates the specification of an experiment from the evaluation of candidate designs.
+- `Fe`
+- `Fd`
+- `Ff`
+- `Fc`
 
-First, define an Experiment: the fixed scientific and acquisition assumptions that determine the “ruler” used to score designs (e.g., TR, total duration or trial budget, autocorrelation parameter rho, target probabilities, contrasts). These settings define how the convolved and deconvolved design matrices are constructed and, for Fe/Fd, fix the whitening matrix 𝑊.
+The scheduling model is now trial-aware, but the metric axes remain event-aware where appropriate:
 
-Second, generate and compare Designs: alternative realizations of event timing and ordering that share the same Experiment base. The efficiency metrics then quantify how well each Design performs relative to that base.
+- `Fe` and `Fd` depend on the realized timing arrays and the realized design matrices
+- `Ff` and `Fc` are computed over flattened event categories
+- `Ff` and `Fc` therefore use `n_events`, not `n_conceptual_trials`
 
-A practical consequence is that raw Fe and Fd are meaningful for comparing Designs within the same Experiment, and across Experiments only when 𝑊 is identical (in practice: same duration, TR, and rho). If you change those, you changed the ruler, so the absolute values are on different scales.
+## Conceptual Trials Versus Flattened Events
 
----
+Conceptual trials determine:
 
-## The Four Metrics
+- trial-template sampling
+- trial boundaries
+- `trial_start_interval`
+- `inter_trial_interval`
+- `rest_interval`
 
-### Fe — Estimation Efficiency
+Flattened modeled events determine:
 
-**What it measures:** How precisely the design allows you to estimate the shape and amplitude of each condition's hemodynamic response, even when events overlap in time.
+- event rows in the exported schedule
+- event occupancy in `Xnonconv`
+- `Ff`
+- `Fc`
 
-**Mathematical definition (A-optimality):**
+In a flat one-event design, `n_conceptual_trials == n_events`.
+In a fixed or probabilistic template design, `n_events` is usually larger because each conceptual trial can contain multiple events.
 
-```
-Fe_raw = n_contrasts / trace( C × inv(X'WX) × C' )
-```
+## Design-Matrix Dependence
 
-Where:
+`Fe` is computed from the deconvolved design matrix.
+`Fd` is computed from the convolved design matrix.
 
-- `X` is the deconvolved design matrix (stimuli × HRF lag bins), downsampled to TR resolution
-- `W` is the whitening matrix (accounts for temporal autocorrelation and drift)
-- `C` is the contrast matrix expanded to HRF resolution (`CX = kron(C, I_laghrf)`)
-- `trace(C × inv(X'WX) × C')` is the sum of variances of your contrast estimates
+Both metrics depend on the realized timing state of the sampled `Design`, including:
 
-**Interpretation:** Fe is the average _precision_ (inverse variance) of your contrast estimates. Higher Fe means the design allows you to more precisely estimate the differences between conditions specified by your contrast matrix. If Design A has twice the Fe of Design B, it means Design A yields contrast estimates with half the variance — you'd need roughly twice as many subjects with Design B to match Design A's precision.
+- realized event durations
+- realized within-trial transition intervals
+- realized between-trial intervals
+- realized rest boundaries
 
-**When it matters most:** Event-related designs where stimuli are closely spaced and temporal overlap is a concern. Fe rewards designs that create orthogonal (non-overlapping) patterns across conditions.
+That means two designs drawn from the same `Experiment` can produce different `Fe` and `Fd` values when their realized timing differs.
 
-### Fd — Detection Efficiency
+`Xnonconv` contains occupancy only during modeled event durations.
+It is zero during:
 
-**What it measures:** How well the design supports detecting activation differences between conditions, assuming the canonical HRF shape is correct.
+- `trial_start_interval`
+- `post_event_interval`
+- `event_transition_interval`
+- `inter_trial_interval`
+- `rest_interval`
 
-**Mathematical definition (A-optimality):**
+`Xconv` can remain nonzero during those periods because the HRF persists after modeled event offset.
 
-```
-Fd_raw = n_contrasts / trace( C × inv(Z'WZ) × C' )
-```
+## Event-Axis Metrics
 
-Where `Z` is the _convolved_ design matrix (each column is the stimulus train convolved with the canonical HRF), as opposed to the deconvolved `X` used for Fe.
+`Ff` measures how closely the realized flattened event counts match the target category probabilities `P`.
 
-**Interpretation:** Fd reflects the design's ability to detect that a contrast is nonzero, given that the HRF has the canonical shape. It rewards designs where the convolved regressors for different conditions are maximally distinguishable from each other and from noise.
+`Fc` measures balance of flattened event-category transitions up to the configured confound order.
 
-**When it matters most:** Blocked or mixed designs where you trust the canonical HRF and want to maximize statistical power for detecting activation. In practice, blocked designs tend to have higher Fd than rapid event-related designs.
+For fixed and probabilistic template designs:
 
-**Fe vs Fd:** Fe is about _estimating_ the response (flexible HRF shape), Fd is about _detecting_ it (assuming canonical shape). These are sometimes in tension — designs that are optimal for one are often suboptimal for the other, which is why you can weight them differently.
+- `Ff` does not become a trial-template frequency metric
+- `Fc` does not become a trial-template transition metric
+- both remain defined on the flattened event stream produced by the realized schedule
 
-### Fc — Confounding Efficiency
+## Raw Versus Normalized Values
 
-**What it measures:** Whether the sequence of conditions is balanced in terms of transitions — i.e., that no condition systematically follows another condition more than expected by chance.
+`Ff` and `Fc` are normalized against event-count-dependent reference mismatches, so they remain on the familiar balance scale used by the package.
 
-**Computation:** Fc compares the observed transition matrix (how often condition _i_ follows condition _j_, up to 3rd order) against the expected transition matrix (based on the specified probabilities). The closer the match, the higher Fc.
+`Fe` and `Fd` are divided by `Experiment.FeMax` and `Experiment.FdMax`.
+If those maxima remain at their default value of `1`, `Optimisation.optimise()` estimates empirical prerun references when the corresponding weights are positive.
+Because those references are empirical rather than mathematical upper bounds, a later selected design can exceed `1.0`.
 
-```
-Fc = 1 - |Q_observed - Q_expected| / FcMax
-```
+Interpretation rule:
 
-Where `FcMax` is calibrated from a worst-case (all-same-stimulus) null design.
+- within one optimization run, larger values are better
+- values above `1.0` for `Fe` or `Fd` mean the selected design beat the empirical prerun reference, not that the implementation is wrong
 
-**Interpretation:** Fc = 1 means transitions perfectly match what you'd expect from random independent draws at the specified probabilities. Fc = 0 means transitions are maximally biased (e.g., stimulus 0 always follows stimulus 1). Values near 1 are desirable to avoid confounding condition effects with transition effects.
+## Weighted Objective
 
-**When it matters most:** Any design where you worry about carry-over effects, adaptation, or expectation. High Fc means the design won't accidentally create systematic patterns (like alternation or repetition) that could confound your contrasts.
-
-### Ff — Frequency Accuracy
-
-**What it measures:** Whether the realized number of trials per condition matches the prescribed probabilities.
-
-**Computation:**
-
-```
-Ff = 1 - |P_observed - P_expected| / FfMax
-```
-
-**Interpretation:** If you specified P = [0.3, 0.3, 0.4] and got trial counts of [6, 6, 8] out of 20 trials, that's a perfect match (Ff = 1). If you got [10, 5, 5], there's a mismatch (lower Ff). This metric ensures the optimizer doesn't accidentally over- or under-represent conditions.
-
-**When it matters most:** When you have specific requirements about how many trials of each type are needed — for example, to ensure enough power per condition, or when trial counts need to match a specific ratio for your analysis.
-
----
-
-## Normalization: Raw Values vs Calibrated Values
-
-### The two regimes
-
-Neurodesign metrics can appear in two forms:
-
-**Raw (uncalibrated):** `FeMax = 1`, so `Fe = Fe_raw`. This is what you get when you manually create an Experiment and Designs, then call `FeCalc()`. The values can be any positive number (typically 10–300 for Fe/Fd depending on your experiment).
-
-**Calibrated (normalized):** `FeMax` is set to the best Fe found during an optimization pre-run, so `Fe = Fe_raw / FeMax ∈ [0, 1]`. This is what happens inside `Optimisation.optimise()`.
-
-### How calibration works
-
-When you call `optimise()`, the optimizer:
-
-1. Runs a pre-optimization with `weights=[1, 0, 0, 0]` (only Fe) for `preruncycles` generations
-2. Takes the best Fe found and sets `exp.FeMax = best_Fe_raw`
-3. Repeats for Fd with `weights=[0, 1, 0, 0]` to calibrate `exp.FdMax`
-4. Fc and Ff are calibrated during `Experiment.__init__` using a worst-case null design
-
-After calibration, all four metrics are on a [0, 1] scale, and the weighted sum `F = w₁·Fe + w₂·Fd + w₃·Ff + w₄·Fc` becomes meaningful.
-
-### When to use which
-
-- **Manual design comparison (same Experiment):** Use raw Fe/Fd. They are directly comparable and ratios are meaningful. A design with Fe=200 has exactly 10× the estimation precision of one with Fe=20.
-
-- **During optimization:** Calibrated values are used automatically. You don't need to do anything.
-
-- **Cross-experiment comparison:** See the next section.
-
----
-
-## Comparing Metrics Across Experiments
-
-### The fundamental rule
-
-**Fe and Fd values are only directly comparable when the whitening matrix `W` is identical.**
-
-The whitening matrix depends on three things:
-
-1. **`n_scans`** = ceil(duration / TR)
-2. **`rho`** (autocorrelation coefficient)
-3. **Drift polynomials** (derived from `n_scans`)
-
-Therefore: two Experiments with the **same `duration`, `TR`, and `rho`** produce **identical `W`**, and their Fe/Fd values live on the same scale. Everything else (ITI model, stim duration, number of stimuli, contrasts, probabilities) affects the _design matrix_ but not the _ruler_ used to measure it.
-
-### The common trap: specifying n_trials
-
-When you specify `n_trials` instead of `duration`, the code computes:
-
-```
-duration = n_trials × (trial_duration + ITImean)
-```
-
-If two Experiments have different `ITImean` but the same `n_trials`, they will have **different durations**, **different `n_scans`**, **different `W`**, and their Fe/Fd values are **not comparable**. This is not a bug — it's a fundamental property. A longer experiment gives you more data, which inherently changes the precision you can achieve.
-
-### How to compare ITI models correctly
-
-**Method 1: Fix duration (recommended for comparing design efficiency)**
-
-Specify `duration=` instead of `n_trials=` when creating both Experiments. The duration determines `n_scans` and `W`, which become identical. Differences in ITI model will change the number of trials that fit and the arrangement of events, which is exactly what you're comparing.
+`Optimisation` combines the component scores as:
 
 ```python
-# CORRECT: same duration → same W → Fe is comparable
-exp_A = Experiment(duration=300, ITImodel="exponential", ITImean=2.1, ...)
-exp_B = Experiment(duration=300, ITImodel="uniform", ITImean=3.0, ...)
-# exp_A.n_scans == exp_B.n_scans → raw Fe directly comparable
+F = w_fe * Fe + w_fd * Fd + w_ff * Ff + w_fc * Fc
 ```
 
-**Method 2: Fix n_trials and compare power (recommended for fixed-trial protocols)**
+The objective uses the scores stored on the realized `Design`.
 
-If your experiment must have exactly N trials regardless of timing, then the right comparison is not Fe but _statistical power_ — the probability of detecting your effect at a given significance level and effect size. This accounts for both design efficiency and total data volume.
+## Current Flat Example
+
+This example is covered by the release-audit tests.
 
 ```python
-# ALSO VALID: same n_trials, compare power via simulation
-exp_A = Experiment(n_trials=40, ITImodel="exponential", ITImean=2.1, ...)
-exp_B = Experiment(n_trials=40, ITImodel="uniform", ITImean=3.0, ...)
-# Fe values are NOT comparable, but power analysis gives the right answer
+from neurodesign import Experiment
+
+exp = Experiment(
+    TR=2.0,
+    n_trials=8,
+    P=[0.5, 0.5],
+    C=[[1, -1]],
+    rho=0.3,
+    n_stimuli=2,
+    event_durations=1.0,
+    trial_start_interval=0.5,
+    post_event_interval=0.2,
+    inter_trial_interval=2.0,
+    resolution=0.1,
+    seed=7,
+)
+
+design = exp.create_design(seed=7)
+design.designmatrix().FCalc(weights=[0.0, 0.5, 0.25, 0.25])  # order: Fe, Fd, Ff, Fc
 ```
 
-### Summary table
+## Current Optimisation Example
 
-| Scenario                                                      | Same `W`? | Raw Fe/Fd comparable? | What to do                                |
-| ------------------------------------------------------------- | --------- | --------------------- | ----------------------------------------- |
-| Same Experiment, different Design                             | Yes       | Yes                   | Compare raw Fe directly                   |
-| Different Experiment, same `duration`/`TR`/`rho`              | Yes       | Yes                   | Compare raw Fe directly                   |
-| Different Experiment, same `n_trials` but different `ITImean` | **No**    | **No**                | Use `duration=` instead, or compare power |
-| Different `TR`                                                | **No**    | **No**                | Use power analysis                        |
-| Different `rho`                                               | **No**    | **No**                | Use power analysis                        |
+This workflow is also exercised by the release-audit tests.
 
-### Fc and Ff comparisons
+```python
+from neurodesign import Experiment, Optimisation
 
-Fc and Ff depend only on the stimulus order and probabilities, not on the whitening matrix. They are always comparable across any two designs with the same number of stimuli and the same target probabilities, regardless of timing parameters.
+exp = Experiment(
+    TR=2.0,
+    n_trials=8,
+    P=[0.5, 0.5],
+    C=[[1, -1]],
+    rho=0.3,
+    n_stimuli=2,
+    event_durations=1.0,
+    trial_start_interval=0.5,
+    post_event_interval=0.2,
+    inter_trial_interval=2.0,
+    resolution=0.1,
+    seed=7,
+)
 
----
+optimisation = Optimisation(
+    experiment=exp,
+    weights=[0.0, 0.5, 0.25, 0.25],  # order: Fe, Fd, Ff, Fc
+    preruncycles=1,
+    cycles=1,
+    optimisation="simulation",
+    G=2,
+    I=1,
+    outdes=1,
+    convergence=1,
+    seed=101,
+)
+optimisation.optimise()
+design = optimisation.selected_design(0)
+```
 
-## Practical Recommendations
+Useful inspection points:
 
-### Choosing weights
+- `design.export_payload()["counts"]["n_events"]`
+- `optimisation.exp.export_specification()["n_conceptual_trials"]`
+- `optimisation.generations_completed`
+- `optimisation.stop_reason`
+- `design.Fe`, `design.Fd`, `design.Ff`, `design.Fc`, `design.F`
 
-The weight vector `[w_Fe, w_Fd, w_Ff, w_Fc]` controls the tradeoff between metrics. Common choices:
+## Convergence
 
-- **`[0.25, 0.25, 0.25, 0.25]`**: Balanced — no strong preference. Good starting point.
-- **`[1, 0, 0, 0]`**: Pure estimation efficiency. Best when you want to estimate HRF shape freely (e.g., FIR models).
-- **`[0, 1, 0, 0]`**: Pure detection power. Best for blocked designs or when you trust the canonical HRF.
-- **`[0, 0.5, 0.25, 0.25]`**: Detection-focused with frequency and confound balance. Common for standard GLM analyses.
+`convergence=k` means patience-based early stopping after `k` consecutive completed generations with no strict improvement in the generation-best objective score.
 
-### Interpreting Fe/Fd magnitudes
+- equality counts as no improvement
+- there is no minimum-delta tolerance in the current implementation
+- early stopping does not prove a global optimum
 
-Raw (uncalibrated) Fe/Fd values are hard to interpret in isolation. What matters is:
-
-- **Relative ranking:** Within the same Experiment, higher is always better.
-- **Ratios:** Fe=200 has 2× the precision of Fe=100. This is linear.
-- **Normalized values:** Fe=0.85 (calibrated) means "85% as good as the best design the optimizer found." This tells you how much room there is for improvement.
-
-### When Fe and Fd conflict
-
-For rapid event-related designs, Fe and Fd often point in opposite directions. Jittered ITIs and randomized orders help Fe (by decorrelating the design matrix) but can hurt Fd (by spreading activation over time). If you need both, use mixed weights and accept that neither will be at its theoretical maximum.
-
-### Design matrix sparsity warning
-
-When using variable ITIs (exponential model), some randomly generated designs may produce ITI sequences that cause the total experiment duration to exceed the container. These designs are automatically rejected during optimization. If you see many rejected designs (slow optimization), consider:
-
-1. Using a longer `duration` to give more headroom
-2. Using `ITImax` to bound the tail of the exponential distribution
-3. Using `trial_max` to set the container size based on the longest possible trial
+When optimization is disabled entirely, metric calculations on a direct `Design` still use the same definitions.
