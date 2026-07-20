@@ -13,6 +13,10 @@ version: "2.0.0"
 repository-code: "https://github.com/SLDlab/neurodesign-plus"
 url: "https://github.com/SLDlab/neurodesign-plus"
 license: "MIT"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.21456774"
+    description: "Archived snapshot of version 2.0.0 on Zenodo"
 preferred-citation:
   type: software
   title: "neurodesign-plus"
@@ -24,6 +28,7 @@ preferred-citation:
     - family-names: "Guigon"
       given-names: "Valentin"
   version: "2.0.0"
+  doi: "10.5281/zenodo.21456774"
   repository-code: "https://github.com/SLDlab/neurodesign-plus"
   url: "https://github.com/SLDlab/neurodesign-plus"
   license: "MIT"

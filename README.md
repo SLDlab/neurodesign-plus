@@ -1,5 +1,7 @@
 # neurodesign-plus
 
+[![DOI](https://zenodo.org/badge/1152439507.svg)](https://doi.org/10.5281/zenodo.21456773)
+
 `neurodesign-plus` is an extended and maintained fork of the original [neurodesign](https://github.com/neuropower/neurodesign) package for fMRI experimental design optimisation.
 
 In addition to the base package workflow, `neurodesign-plus` adds support for:
